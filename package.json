@@ -1,0 +1,18 @@
+{
+  "name": "cosmordial",
+  "version": "2.0.0",
+  "description": "ASCII artificial life and orbital gravity web component",
+  "type": "module",
+  "main": "dist/cosmordial.js",
+  "exports": "./dist/cosmordial.js",
+  "files": ["dist"],
+  "scripts": {
+    "dev": "node build.js --serve",
+    "build": "node build.js",
+    "prepare": "node build.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

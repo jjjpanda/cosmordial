@@ -1,0 +1,125 @@
+:host {
+  --bg: #000;
+  --fg: #b8c0c2;
+  --dim: #333a40;
+  display: block;
+  box-sizing: border-box;
+  max-width: 100vw;
+  padding: 1ch;
+  background: var(--bg);
+  color: var(--fg);
+  font: min(26px, 2.3dvh, 1.31vw)/1.15 ui-monospace, Consolas, Menlo, monospace;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: max-content 38ch;
+  grid-template-rows: max-content 1fr;
+  grid-template-areas: 'field controls' 'field status';
+  gap: .8ch 2ch;
+  align-items: start;
+}
+
+.controls { grid-area: controls; }
+.u { grid-area: field; }
+.status { grid-area: status; }
+.pophead { margin: .6ch 0 .2ch; }
+.sparkline { display: block; width: 100%; height: 3.4em; overflow: visible; color: var(--fg); }
+.sparkline polyline { fill: none; stroke: currentColor; stroke-width: 1.7; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+
+:host([theme='green']) {
+  --bg: #010a03;
+  --fg: #73d98a;
+  --dim: #23452b;
+}
+
+:host([theme='amber']) {
+  --bg: #0a0600;
+  --fg: #e8b45e;
+  --dim: #4a3300;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2ch 1ch;
+  margin-bottom: .5ch;
+}
+
+.nav-break { flex-basis: 100%; height: 0; }
+
+button {
+  all: unset;
+  cursor: pointer;
+}
+
+button:hover,
+button.on {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+button:focus-visible,
+:host(:focus-visible) {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+}
+
+input {
+  width: 12ch;
+  accent-color: var(--fg);
+}
+
+output {
+  min-width: 4ch;
+}
+
+pre {
+  margin: 0;
+  font: inherit;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .2ch 1ch;
+  padding: .4ch 0;
+  border-top: 1px solid var(--dim);
+}
+
+.legend strong { grid-column: 1 / -1; color: var(--fg); }
+.legend span { white-space: nowrap; }
+.legend small { color: var(--fg); font: inherit; }
+
+.e { color: var(--dim); }
+.t { color: #5d7391; }
+.x { color: #f2c46e; }
+
+/* Entity colors stay fixed across themes so the legend always matches the field. */
+.m { color: #ad9064; }  /* food: loose matter */
+.r { color: #929ba4; }  /* rock */
+.s { color: #fff0a8; }  /* star: warm white */
+.s-dim { color: #e6bd68; }
+.s-bright { color: #fffdf0; }
+.a { color: #dce4e8; }  /* cell */
+.h { color: #ef6b68; }  /* hunter */
+.p { color: #67ce7d; }  /* heliotrope */
+.b { color: #68bbd1; }  /* parasite */
+.f { color: #f3a65d; }  /* forager */
+.infected { text-decoration: underline; text-decoration-color: #68bbd1; text-underline-offset: .12em; }
+
+@media (max-width: 700px) {
+  :host { font-size: min(26px, 1.7dvh, 1.85vw); }
+  .layout {
+    grid-template-columns: max-content;
+    grid-template-rows: auto;
+    grid-template-areas: 'controls' 'field' 'status';
+  }
+  .legend { grid-template-columns: repeat(4, max-content); }
+}
