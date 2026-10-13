@@ -1,5 +1,9 @@
 # Cosmordial
 
+![Cosmordial simulation using the binary preset](screenshots/binary.png)
+
+![Cosmordial simulation using the soup preset](screenshots/soup.png)
+
 ## Matter
 
 Gravity pulls matter together:
