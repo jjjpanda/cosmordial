@@ -7,7 +7,11 @@ export const P = {
   DRAG: 0.97,
   VMAX: 2.2,
   VMAX_CELL: 0.6,
-  HUNTER_SPEED: 1.15,
+  HUNTER_SPEED: 1.6,
+  HUNTER_TIRED_SPEED: 1,
+  HUNTER_STAMINA_DRAIN: 0.012,
+  HUNTER_STAMINA_RECOVER: 0.016,
+  HUNTER_SPRINT_COST: 0.05,
   VMAX_STAR: 0.45,
   BINARY_STAR_VMAX: 0.45,
   BINARY_ORBIT_FACTOR: 1.05,
@@ -91,6 +95,8 @@ export const P = {
   PARASITE_BIRTH_E: 12,
   BIRTH_COST: 1.5,
   HUNTER_BIRTH_WAIT: 60,
+  HUNTER_FED_BIRTH_WAIT: 20,
+  HUNTER_BIRTH_PREY_RATIO: 2,
   HUNTER_BIRTH_COST: 3.5,
   LIFESPAN: 360,
   FORAGER_LIFE: 0.9,
@@ -107,7 +113,7 @@ export const P = {
 export const BURST = {
   born: { r: 8, push: 0.6, harm: 0.5, glow: 5 },
   merge: { r: 16, push: 1.5, harm: 1, glow: 9 },
-  nova: { r: 32, push: 3.5, harm: 3, glow: 16 },
+  nova: { r: 34, push: 3.9, harm: 3.3, glow: 18 },
 };
 
 export const [THR, SMELL, BITE, PHOTO, COH, KIN, REPRO] = [0, 1, 2, 3, 4, 5, 6];

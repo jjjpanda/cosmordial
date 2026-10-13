@@ -20,8 +20,12 @@ Cells spend energy to move and reproduce. Mutations can change their role.
 | --- | --- |
 | Forager | Seeks food; flees hunters |
 | Light seeker | Seeks starlight; burns near stars; cannot be infected |
-| Hunter | Chases and drains cells and foragers; can be infected |
+| Hunter | Sprints, tires, and drains prey; can be infected |
 | Parasite | Drains and infects cells, foragers, and hunters |
+
+## Benchmark
+
+`npm run benchmark` runs three seeded 5,000-tick trials per preset.
 
 ## Embed
 

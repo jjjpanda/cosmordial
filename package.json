@@ -10,6 +10,7 @@
     "dev": "node build.js --serve",
     "build": "node build.js",
     "test": "node --test",
+    "benchmark": "node --expose-gc scripts/benchmark.js",
     "prepare": "node build.js"
   },
   "license": "MIT",

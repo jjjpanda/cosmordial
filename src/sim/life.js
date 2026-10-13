@@ -46,7 +46,10 @@ export function advanceLife(ctx) {
       const drain = Math.min(prey.energy, (g[BITE] * P.DRAIN) / (1 + prey.guard));
       prey.energy -= drain;
       e.energy += drain * P.BITE_GAIN;
-      if (drain > 0) events.bites++;
+      if (drain > 0) {
+        events.bites++;
+        if (roleOf(prey) !== ROLE.HUNTER) e.lastNonHunterBite = e.age;
+      }
     }
 
     const host = parasite ? nearest(e, cells, P.INFECT_R, (t) => !isHost(t) || t.hostDrain >= P.HOST_DRAIN_CAP || t.energy <= 4)?.[0] : null;
@@ -99,6 +102,8 @@ export function advanceLife(ctx) {
     host.immuneUntil = host.age + P.SPORE_REST;
   }
 
+  const livingHunters = cells.filter((e) => e.energy > 0 && roleOf(e) === ROLE.HUNTER).length;
+  const livingNonHunters = cells.filter((e) => e.energy > 0 && roleOf(e) !== ROLE.HUNTER).length;
   const next = [];
   for (const e of es) {
     if (e.dead) continue;
@@ -112,7 +117,10 @@ export function advanceLife(ctx) {
       const parasite = isParasite(e);
       const birthCost = hunter ? P.HUNTER_BIRTH_COST : P.BIRTH_COST;
       const birthEnergy = parasite ? P.PARASITE_BIRTH_E + 8 * e.g[REPRO] : 14 + 14 * e.g[REPRO];
-      if (e.energy >= birthEnergy + (birthCost - P.BIRTH_COST) && (!hunter || e.age - (e.lastBirth ?? 0) >= P.HUNTER_BIRTH_WAIT)) {
+      const fedSinceBirth = hunter && (e.lastNonHunterBite ?? 0) > (e.lastBirth ?? 0);
+      const birthWait = fedSinceBirth ? P.HUNTER_FED_BIRTH_WAIT : P.HUNTER_BIRTH_WAIT;
+      const preyAvailable = !hunter || livingNonHunters >= P.HUNTER_BIRTH_PREY_RATIO * livingHunters;
+      if (preyAvailable && e.energy >= birthEnergy + (birthCost - P.BIRTH_COST) && (!hunter || e.age - (e.lastBirth ?? 0) >= birthWait)) {
         const childEnergy = parasite ? P.PARASITE_CHILD_E + 4 * e.g[REPRO] : P.CHILD_E + 6 * e.g[REPRO];
         e.energy -= childEnergy + birthCost;
         e.lastBirth = e.age;

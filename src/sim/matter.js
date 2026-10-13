@@ -79,7 +79,7 @@ export function collideAndBurst(ctx) {
     if (kind === 'nova') {
       if (s.mass < P.NOVA) continue;
       const count = Math.floor((s.mass - P.REMNANT) / P.MATTER);
-      eject(s, count, [2, 1.5, 1]);
+      eject(s, count, [2.2, 1.65, 1.1]);
       s.mass -= count * P.MATTER;
       events.novae++;
     } else if (kind === 'merge') {

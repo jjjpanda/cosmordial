@@ -2,6 +2,46 @@ import { P, ROLE, THR, SMELL, BITE, PHOTO, COH } from './constants.js';
 import { jitter, bound } from './space.js';
 import { roleOf, kin, canBite, isParasite, isHost, isHuntTarget, starPower } from './entities.js';
 
+function* nearbyCellPairs(cells, w, wrap) {
+  const range = P.PARASITE_BOND_MAX;
+  const columns = Math.max(1, Math.floor(w.w / range));
+  const rows = Math.max(1, Math.floor(w.h / range));
+  const cellWidth = w.w / columns;
+  const cellHeight = w.h / rows;
+  const binOf = (e) => [
+    Math.min(columns - 1, Math.floor(e.x / cellWidth)),
+    Math.min(rows - 1, Math.floor(e.y / cellHeight)),
+  ];
+  const bins = new Map();
+  for (let i = 0; i < cells.length; i++) {
+    const [x, y] = binOf(cells[i]);
+    const key = y * columns + x;
+    if (!bins.has(key)) bins.set(key, []);
+    bins.get(key).push(i);
+  }
+  for (let i = 0; i < cells.length; i++) {
+    const [x, y] = binOf(cells[i]);
+    const candidates = [];
+    const seen = new Set();
+    for (let oy = -1; oy <= 1; oy++) {
+      let by = y + oy;
+      if (wrap) by = (by + rows) % rows;
+      else if (by < 0 || by >= rows) continue;
+      for (let ox = -1; ox <= 1; ox++) {
+        let bx = x + ox;
+        if (wrap) bx = (bx + columns) % columns;
+        else if (bx < 0 || bx >= columns) continue;
+        const key = by * columns + bx;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        for (const j of bins.get(key) ?? []) if (j > i) candidates.push(j);
+      }
+    }
+    candidates.sort((a, b) => a - b);
+    for (const j of candidates) yield [cells[i], cells[j]];
+  }
+}
+
 export function moveEntities(ctx) {
   const { w, wrap, G, d, nearest, es, cells, heavy, stars, food } = ctx;
   for (const e of es) {
@@ -48,32 +88,28 @@ export function moveEntities(ctx) {
     b.vy += ty * correction * a.mass / mass;
   }
 
-  for (let i = 0; i < cells.length; i++) {
-    const a = cells[i];
-    for (let j = i + 1; j < cells.length; j++) {
-      const b = cells[j];
-      const [dx, dy] = d(a, b);
-      const r2 = dx * dx + dy * dy;
-      const parasitePair = isParasite(a) && isParasite(b);
-      const bondMax = parasitePair ? P.PARASITE_BOND_MAX : P.BOND_MAX;
-      if (r2 > bondMax ** 2 || r2 < 1e-4) continue;
-      const r = Math.sqrt(r2);
-      let f;
-      if (r < P.CORE) f = -P.REPEL * (1 - r / P.CORE);
-      else if (kin(a, b)) {
-        const coh = (a.g[COH] + b.g[COH]) / 2;
-        const share = (a.energy - b.energy) * P.SHARE * coh;
-        a.energy -= share;
-        b.energy += share;
-        f = (r - (parasitePair ? P.PARASITE_BOND : P.BOND)) * (parasitePair ? P.PARASITE_BOND_F : P.BOND_F) * coh;
-        a.guard += coh;
-        b.guard += coh;
-      } else continue;
-      a.ax += (f * dx) / r;
-      a.ay += (f * dy) / r;
-      b.ax -= (f * dx) / r;
-      b.ay -= (f * dy) / r;
-    }
+  for (const [a, b] of nearbyCellPairs(cells, w, wrap)) {
+    const [dx, dy] = d(a, b);
+    const r2 = dx * dx + dy * dy;
+    const parasitePair = isParasite(a) && isParasite(b);
+    const bondMax = parasitePair ? P.PARASITE_BOND_MAX : P.BOND_MAX;
+    if (r2 > bondMax ** 2 || r2 < 1e-4) continue;
+    const r = Math.sqrt(r2);
+    let f;
+    if (r < P.CORE) f = -P.REPEL * (1 - r / P.CORE);
+    else if (kin(a, b)) {
+      const coh = (a.g[COH] + b.g[COH]) / 2;
+      const share = (a.energy - b.energy) * P.SHARE * coh;
+      a.energy -= share;
+      b.energy += share;
+      f = (r - (parasitePair ? P.PARASITE_BOND : P.BOND)) * (parasitePair ? P.PARASITE_BOND_F : P.BOND_F) * coh;
+      a.guard += coh;
+      b.guard += coh;
+    } else continue;
+    a.ax += (f * dx) / r;
+    a.ay += (f * dy) / r;
+    b.ax -= (f * dx) / r;
+    b.ay -= (f * dy) / r;
   }
 
   for (const e of cells) {
@@ -82,6 +118,7 @@ export function moveEntities(ctx) {
     const pw = g[THR] * P.THRUST;
     let px = jitter(pw);
     let py = jitter(pw);
+    let sprinting = false;
     const pull = (t, weight) => {
       if (!t) return;
       px += (t[1] / t[3]) * pw * weight;
@@ -89,7 +126,10 @@ export function moveEntities(ctx) {
     };
     if (role === ROLE.HUNTER) {
       const preferred = nearest(e, cells, P.HUNT_SENSE, (t) => !canBite(e, t) || !isHuntTarget(t));
-      pull(preferred ?? nearest(e, cells, P.HUNT_SENSE, (t) => !canBite(e, t)), P.HUNT_TAXIS * g[BITE]);
+      const target = preferred ?? nearest(e, cells, P.HUNT_SENSE, (t) => !canBite(e, t));
+      pull(target, P.HUNT_TAXIS * g[BITE]);
+      sprinting = !!target;
+      e.stamina = Math.max(0, Math.min(1, (e.stamina ?? 1) + (sprinting ? -P.HUNTER_STAMINA_DRAIN : P.HUNTER_STAMINA_RECOVER)));
     }
     if (role === ROLE.CELL || role === ROLE.FORAGER) pull(nearest(e, cells, P.FLEE_R, (t) => roleOf(t) !== ROLE.HUNTER), -P.FLEE_TAXIS);
     if (role === ROLE.PARASITE) {
@@ -133,7 +173,7 @@ export function moveEntities(ctx) {
     }
     e.vx += px;
     e.vy += py;
-    e.energy -= (Math.abs(px) + Math.abs(py)) * P.MOVE_COST;
+    e.energy -= (Math.abs(px) + Math.abs(py)) * P.MOVE_COST + (sprinting ? P.HUNTER_SPRINT_COST * e.stamina : 0);
   }
 
   for (const e of es) {
@@ -141,7 +181,7 @@ export function moveEntities(ctx) {
     e.vx = (e.vx + e.ax * P.DT) * drag;
     e.vy = (e.vy + e.ay * P.DT) * drag;
     let vmax = P.VMAX;
-    if (e.g) vmax = P.VMAX_CELL * (roleOf(e) === ROLE.HUNTER ? P.HUNTER_SPEED : 1);
+    if (e.g) vmax = P.VMAX_CELL * (roleOf(e) === ROLE.HUNTER ? P.HUNTER_TIRED_SPEED + (P.HUNTER_SPEED - P.HUNTER_TIRED_SPEED) * e.stamina : 1);
     else if (e.binaryStar) vmax = P.BINARY_STAR_VMAX * Math.max(1, Math.sqrt(G / P.G));
     else if (e.mass >= P.STAR) vmax = P.VMAX_STAR * Math.sqrt(P.STAR / e.mass);
     const v = Math.hypot(e.vx, e.vy);

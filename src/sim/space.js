@@ -6,7 +6,7 @@ export const jitter = (s) => (Math.random() - 0.5) * s;
 export const physicalRadius = (e) => e.g ? P.CORE / 2 : e.mass >= P.STAR ? ROW / 2 : Math.min(2.5, 0.7 * Math.sqrt(e.mass / P.MATTER));
 const SEPARATION_EPS = 1e-6;
 const SEPARATION_OVERSHOOT = 1.5;
-const MAX_SEPARATION_PASSES = 256;
+const MAX_SEPARATION_PASSES = 1024;
 export function delta(a, b, w, wrap) {
   let dx = b.x - a.x;
   let dy = b.y - a.y;
