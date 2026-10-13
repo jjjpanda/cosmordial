@@ -3,12 +3,12 @@ export { glyph } from './sim/entities.js';
 export { createWorld, census } from './sim/world.js';
 
 import { P, ROW } from './sim/constants.js';
-import { delta } from './sim/space.js';
+import { delta, separateEntities } from './sim/space.js';
 import { moveEntities } from './sim/motion.js';
 import { collideAndBurst, replenishMatter } from './sim/matter.js';
 import { advanceLife } from './sim/life.js';
 
-export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box' } = {}) {
+export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trailLength = P.TRAIL_LENGTH } = {}) {
   const wrap = boundary === 'torus';
   const d = (a, b) => delta(a, b, w, wrap);
   const es = w.entities;
@@ -35,22 +35,28 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box' } = {
     return best;
   };
 
-  const ctx = { w, wrap, G, mutation, d, nearest, es, cells, bodies, heavy, stars, food, born, events };
-  moveEntities(ctx);
-  collideAndBurst(ctx);
-  const next = advanceLife(ctx);
-  replenishMatter(ctx, next);
+  // These groups describe the entities at the start of this tick. Later phases
+  // mark removals with `dead` and collect additions in `born`.
+  moveEntities({ w, wrap, G, d, nearest, es, cells, heavy, stars, food });
+  collideAndBurst({ w, wrap, d, bodies, stars, es, born, events });
+  const next = advanceLife({ w, wrap, mutation, d, nearest, es, cells, stars, food, born, events });
+  replenishMatter({ w, G, d, stars, events }, next);
+  separateEntities(next, w, wrap);
 
   const tr = w.trails;
+  const length = Math.max(0, Number(trailLength) || 0);
+  const decay = length ? P.TRAIL_DECAY ** (P.TRAIL_LENGTH / length) : 0;
   for (let i = 0; i < tr.length; i++) {
-    tr[i] *= P.TRAIL_DECAY;
+    tr[i] *= decay;
     w.flash[i] *= P.FLASH_DECAY;
   }
-  for (const e of next) {
-    if (!e.g) continue;
-    const x = Math.floor(e.x);
-    const y = Math.floor(e.y / ROW);
-    if (x >= 0 && x < w.cols && y >= 0 && y < w.rows) tr[y * w.cols + x] = Math.min(1, tr[y * w.cols + x] + 0.45);
+  if (length) {
+    for (const e of next) {
+      if (!e.g) continue;
+      const x = Math.floor(e.x);
+      const y = Math.floor(e.y / ROW);
+      if (x >= 0 && x < w.cols && y >= 0 && y < w.rows) tr[y * w.cols + x] = Math.min(1, tr[y * w.cols + x] + P.TRAIL_BRIGHTNESS / 100);
+    }
   }
 
   w.entities = next;

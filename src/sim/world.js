@@ -1,8 +1,8 @@
 import { P, ROW } from './constants.js';
-import { TAU, rand, jitter, orbit } from './space.js';
+import { TAU, rand, jitter, orbit, separateEntities } from './space.js';
 import { body, cell, eventCounts, glyph, starterGenome } from './entities.js';
 
-export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G) {
+export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G, boundary = 'box') {
   const w = cols;
   const h = rows * ROW;
   const c = { x: w / 2, y: h / 2, vx: 0, vy: 0 };
@@ -33,7 +33,9 @@ export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G) {
     for (let i = 0; i < 10; i++) clade(starterGenome(), rand(8, w - 8), rand(8, h - 8), jitter(0.06), jitter(0.06));
   }
 
-  return { preset, cols, rows, w, h, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
+  const world = { preset, cols, rows, w, h, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
+  separateEntities(es, world, boundary === 'torus');
+  return world;
 }
 
 export function census(w) {

@@ -1,10 +1,9 @@
 import { P, BURST } from './constants.js';
-import { TAU, rand, jitter, bound, flash, orbit } from './space.js';
+import { TAU, rand, jitter, bound, flash, orbit, physicalRadius } from './space.js';
 import { body, cell, starterGenome, starPower } from './entities.js';
 
 export function collideAndBurst(ctx) {
   const { w, wrap, d, bodies, stars, es, born, events } = ctx;
-  const radius = (b) => Math.min(2.5, 0.7 * Math.sqrt(b.mass / P.MATTER));
   const bursts = [];
   for (let i = 0; i < bodies.length; i++) {
     const a = bodies[i];
@@ -13,7 +12,7 @@ export function collideAndBurst(ctx) {
       const b = bodies[j];
       if (b.dead) continue;
       const [dx, dy] = d(a, b);
-      const r = radius(a) + radius(b);
+      const r = physicalRadius(a) + physicalRadius(b);
       if (dx * dx + dy * dy > r * r) continue;
       const stars2 = Math.min(a.mass, b.mass) >= P.STAR;
       if (!stars2 && Math.hypot(a.vx - b.vx, a.vy - b.vy) > P.MERGE_V) {
@@ -44,7 +43,7 @@ export function collideAndBurst(ctx) {
           rock.mass -= P.MATTER;
           rock.vx -= side * nx * P.MATTER / rock.mass;
           rock.vy -= side * ny * P.MATTER / rock.mass;
-          const fragment = body(rock.x + side * nx * (radius(rock) + 0.7), rock.y + side * ny * (radius(rock) + 0.7), vx + side * nx, vy + side * ny, P.MATTER);
+          const fragment = body(rock.x + side * nx * (physicalRadius(rock) + 0.7), rock.y + side * ny * (physicalRadius(rock) + 0.7), vx + side * nx, vy + side * ny, P.MATTER);
           bound(fragment, w, wrap);
           born.push(fragment);
           events.shatters++;

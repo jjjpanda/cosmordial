@@ -1,6 +1,6 @@
-import { P, THR, SMELL, BITE, PHOTO, COH, REPRO } from './constants.js';
+import { P, ROLE, THR, SMELL, BITE, PHOTO, COH, REPRO } from './constants.js';
 import { TAU, rand, jitter, bound } from './space.js';
-import { body, cell, glyph, canBite, isParasite, isHost, mutate, starPower } from './entities.js';
+import { body, cell, roleOf, canBite, isParasite, isHost, mutate, starPower } from './entities.js';
 
 export function advanceLife(ctx) {
   const { w, wrap, mutation, d, nearest, es, cells, stars, food, born, events } = ctx;
@@ -41,7 +41,7 @@ export function advanceLife(ctx) {
       e.energy += g[PHOTO] * (0.5 + g[PHOTO]) * P.PHOTO * f * s.power * Math.min(1, P.LIGHT * s.power / s.demand) * (parasite ? P.PARASITE_LIGHT : 1);
     }
 
-    const prey = glyph(e) === 'Ω' ? nearest(e, cells, P.BITE_R, (t) => t.energy <= 0 || !canBite(e, t))?.[0] : null;
+    const prey = roleOf(e) === ROLE.HUNTER ? nearest(e, cells, P.BITE_R, (t) => t.energy <= 0 || !canBite(e, t))?.[0] : null;
     if (prey) {
       const drain = Math.min(prey.energy, (g[BITE] * P.DRAIN) / (1 + prey.guard));
       prey.energy -= drain;
@@ -55,8 +55,14 @@ export function advanceLife(ctx) {
       host.energy -= drain;
       host.hostDrain += drain;
       e.energy += drain * P.INFECT_GAIN;
-      if (!host.spore && host.age >= (host.immuneUntil ?? 0) && Math.random() < P.SPORE_CHANCE * (e.lit.length ? 1 : P.DARK_SPORE_BOOST)) {
-        host.spore = { g: [...g], gen: e.gen, age: 0 };
+    }
+    const susceptible = parasite ? nearest(e, cells, P.INFECT_R, (t) => !isHost(t) || t.spore || t.age < (t.immuneUntil ?? 0) || t.energy <= 4)?.[0] : null;
+    if (susceptible) {
+      const role = roleOf(susceptible);
+      const boost = role === ROLE.HUNTER || role === ROLE.FORAGER ? P.SWARM_SPORE_BOOST : 1;
+      const chance = Math.min(1, P.SPORE_CHANCE * boost * (e.lit.length ? 1 : P.DARK_SPORE_BOOST));
+      if (Math.random() < chance) {
+        susceptible.spore = { g: [...g], gen: e.gen, age: 0 };
         events.infections++;
       }
     }
@@ -102,7 +108,7 @@ export function advanceLife(ctx) {
         events.deaths++;
         continue;
       }
-      const hunter = glyph(e) === 'Ω';
+      const hunter = roleOf(e) === ROLE.HUNTER;
       const parasite = isParasite(e);
       const birthCost = hunter ? P.HUNTER_BIRTH_COST : P.BIRTH_COST;
       const birthEnergy = parasite ? P.PARASITE_BIRTH_E + 8 * e.g[REPRO] : 14 + 14 * e.g[REPRO];

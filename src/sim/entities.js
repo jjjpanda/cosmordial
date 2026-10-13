@@ -1,4 +1,4 @@
-import { P, KIN, ROLES } from './constants.js';
+import { P, KIN, ROLE, ROLES, GLYPHS } from './constants.js';
 import { rand, jitter } from './space.js';
 
 export const starterGenome = () => [rand(0.15, 0.75), rand(0.4, 0.49), rand(0.4, 0.49), rand(0.4, 0.49), rand(0.4, 0.49), rand(0.2, 0.4), rand(0.2, 0.7)];
@@ -6,8 +6,8 @@ export const body = (x, y, vx, vy, mass) => ({ x, y, vx, vy, mass });
 export const starPower = (s) => Math.sqrt(s.mass / 35);
 export const cell = (x, y, vx, vy, g, energy = P.START_E, gen = 0) => {
   const e = { x, y, vx, vy, g, energy, gen, age: 0, lastBirth: 0 };
-  const role = glyph(e);
-  const life = role === 'Ω' ? P.HUNTER_LIFE : role === 'σ' ? P.FORAGER_LIFE : role === 'φ' ? P.HELIOTROPE_LIFE : 1;
+  const role = roleOf(e);
+  const life = role === ROLE.HUNTER ? P.HUNTER_LIFE : role === ROLE.FORAGER ? P.FORAGER_LIFE : role === ROLE.HELIOTROPE ? P.HELIOTROPE_LIFE : 1;
   e.lifespan = Math.round(P.LIFESPAN * life * rand(0.75, 1.35));
   return e;
 };
@@ -17,17 +17,21 @@ export const eventCounts = () => ({
   starBirths: 0, starMergers: 0, novae: 0,
 });
 
-export function glyph(e) {
-  if (!e.g) return e.mass >= P.STAR ? 'Θ' : e.mass >= P.ROCK ? '°' : '∙';
-  let best = 'α';
+export function roleOf(e) {
+  if (!e.g) return e.mass >= P.STAR ? ROLE.STAR : e.mass >= P.ROCK ? ROLE.ROCK : ROLE.FOOD;
+  let best = ROLE.CELL;
   let max = 0.5;
-  for (const [i, c] of ROLES) {
+  for (const [i, role] of ROLES) {
     if (e.g[i] > max) {
       max = e.g[i];
-      best = c;
+      best = role;
     }
   }
   return best;
+}
+
+export function glyph(e) {
+  return GLYPHS[roleOf(e)];
 }
 
 export function kin(a, b) {
@@ -38,17 +42,17 @@ export function kin(a, b) {
 }
 
 export function canBite(a, b) {
-  return !kin(a, b) && !(glyph(a) === 'σ' && glyph(b) === 'σ');
+  return !kin(a, b) && !(roleOf(a) === ROLE.FORAGER && roleOf(b) === ROLE.FORAGER);
 }
 
-export const isParasite = (e) => glyph(e) === 'Ξ';
+export const isParasite = (e) => roleOf(e) === ROLE.PARASITE;
 export const isHost = (e) => {
-  const role = glyph(e);
-  return role === 'α' || role === 'σ' || role === 'Ω';
+  const role = roleOf(e);
+  return role === ROLE.CELL || role === ROLE.FORAGER || role === ROLE.HUNTER;
 };
 export const isHuntTarget = (e) => {
-  const role = glyph(e);
-  return role === 'α' || role === 'σ';
+  const role = roleOf(e);
+  return role === ROLE.CELL || role === ROLE.FORAGER;
 };
 
 export function mutate(g, rate) {

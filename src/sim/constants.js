@@ -57,11 +57,14 @@ export const P = {
   DRAIN: 2.1,
   BITE_GAIN: 0.95,
   HOST_TAXIS: 1.7,
+  HOST_SENSE: 26,
+  SPECIALIST_SENSE: 18,
   HOST_DRAIN_CAP: 1.5,
-  INFECT_R: 2.2,
+  INFECT_R: 3,
   INFECT_DRAIN: 1,
   INFECT_GAIN: 0.85,
-  SPORE_CHANCE: 0.18,
+  SPORE_CHANCE: 0.22,
+  SWARM_SPORE_BOOST: 1.8,
   SPORE_DELAY: 30,
   SPORE_COST: 8,
   SPORE_REST: 120,
@@ -72,7 +75,7 @@ export const P = {
   UPKEEP: 0.02,
   TRAIT_COST: 0.01,
   MOVE_COST: 0.15,
-  LIGHT_R: 25,
+  LIGHT_R: 16,
   BURN_R: 3,
   SAFE_R: 8,
   STAR_AVOID: 0.28,
@@ -96,6 +99,8 @@ export const P = {
   MUTATION: 0.13,
   STAR_MUT: 0.2,
   TRAIL_DECAY: 0.75,
+  TRAIL_LENGTH: 6,
+  TRAIL_BRIGHTNESS: 50,
   FLASH_DECAY: 0.9,
 };
 
@@ -106,7 +111,27 @@ export const BURST = {
 };
 
 export const [THR, SMELL, BITE, PHOTO, COH, KIN, REPRO] = [0, 1, 2, 3, 4, 5, 6];
-export const ROLES = [[BITE, 'Ω'], [PHOTO, 'φ'], [COH, 'Ξ'], [SMELL, 'σ']];
+export const ROLE = {
+  FOOD: 'food',
+  ROCK: 'rock',
+  STAR: 'star',
+  CELL: 'cell',
+  HUNTER: 'hunter',
+  HELIOTROPE: 'heliotrope',
+  PARASITE: 'parasite',
+  FORAGER: 'forager',
+};
+export const ROLES = [[BITE, ROLE.HUNTER], [PHOTO, ROLE.HELIOTROPE], [COH, ROLE.PARASITE], [SMELL, ROLE.FORAGER]];
+export const GLYPHS = {
+  [ROLE.FOOD]: '▫',
+  [ROLE.ROCK]: '○',
+  [ROLE.STAR]: 'Θ',
+  [ROLE.CELL]: '●',
+  [ROLE.HUNTER]: '▲',
+  [ROLE.HELIOTROPE]: '+',
+  [ROLE.PARASITE]: '×',
+  [ROLE.FORAGER]: '→',
+};
 
 export const PRESETS = ['orbit', 'binary', 'soup'];
 

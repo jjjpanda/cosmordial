@@ -1,6 +1,6 @@
-import { P, THR, SMELL, BITE, PHOTO, COH } from './constants.js';
+import { P, ROLE, THR, SMELL, BITE, PHOTO, COH } from './constants.js';
 import { jitter, bound } from './space.js';
-import { glyph, kin, canBite, isParasite, isHost, isHuntTarget, starPower } from './entities.js';
+import { roleOf, kin, canBite, isParasite, isHost, isHuntTarget, starPower } from './entities.js';
 
 export function moveEntities(ctx) {
   const { w, wrap, G, d, nearest, es, cells, heavy, stars, food } = ctx;
@@ -78,7 +78,7 @@ export function moveEntities(ctx) {
 
   for (const e of cells) {
     const g = e.g;
-    const role = glyph(e);
+    const role = roleOf(e);
     const pw = g[THR] * P.THRUST;
     let px = jitter(pw);
     let py = jitter(pw);
@@ -87,14 +87,18 @@ export function moveEntities(ctx) {
       px += (t[1] / t[3]) * pw * weight;
       py += (t[2] / t[3]) * pw * weight;
     };
-    if (role === 'Ω') {
+    if (role === ROLE.HUNTER) {
       const preferred = nearest(e, cells, P.HUNT_SENSE, (t) => !canBite(e, t) || !isHuntTarget(t));
       pull(preferred ?? nearest(e, cells, P.HUNT_SENSE, (t) => !canBite(e, t)), P.HUNT_TAXIS * g[BITE]);
     }
-    if (role === 'α' || role === 'σ') pull(nearest(e, cells, P.FLEE_R, (t) => glyph(t) !== 'Ω'), -P.FLEE_TAXIS);
-    if (role === 'Ξ') {
+    if (role === ROLE.CELL || role === ROLE.FORAGER) pull(nearest(e, cells, P.FLEE_R, (t) => roleOf(t) !== ROLE.HUNTER), -P.FLEE_TAXIS);
+    if (role === ROLE.PARASITE) {
       pull(nearest(e, cells, P.PARASITE_SENSE, (t) => !isParasite(t) || !kin(e, t)), P.PARASITE_KIN_TAXIS * g[COH]);
-      pull(nearest(e, cells, P.SENSE, (t) => !isHost(t)), P.HOST_TAXIS * g[COH]);
+      const specialist = nearest(e, cells, P.SPECIALIST_SENSE, (t) => {
+        const targetRole = roleOf(t);
+        return targetRole !== ROLE.HUNTER && targetRole !== ROLE.FORAGER;
+      });
+      pull(specialist ?? nearest(e, cells, P.HOST_SENSE, (t) => !isHost(t)), P.HOST_TAXIS * g[COH]);
     }
     pull(nearest(e, food, P.SENSE * (0.5 + g[SMELL])), P.SMELL * g[SMELL]);
     const sun = nearest(e, stars, P.LIGHT_R * 1.5);
@@ -115,12 +119,12 @@ export function moveEntities(ctx) {
         px -= ux * escape;
         py -= uy * escape;
       }
-      if (role === 'Ω' && r < P.HUNT_AVOID_R) {
+      if (role === ROLE.HUNTER && r < P.HUNT_AVOID_R) {
         const escape = P.HUNT_AVOID * (1 - r / P.HUNT_AVOID_R);
         px -= ux * escape;
         py -= uy * escape;
       }
-      if (role === 'φ') {
+      if (role === ROLE.HELIOTROPE) {
         const target = Math.max(safe + 3, P.LIGHT_R * 0.5 * Math.sqrt(starPower(s)));
         const seek = P.PHOTO_TAXIS * g[PHOTO] * (0.5 + g[THR]) * Math.max(-1, Math.min(1, (r - target) / target));
         px += ux * seek;
@@ -137,7 +141,7 @@ export function moveEntities(ctx) {
     e.vx = (e.vx + e.ax * P.DT) * drag;
     e.vy = (e.vy + e.ay * P.DT) * drag;
     let vmax = P.VMAX;
-    if (e.g) vmax = P.VMAX_CELL * (glyph(e) === 'Ω' ? P.HUNTER_SPEED : 1);
+    if (e.g) vmax = P.VMAX_CELL * (roleOf(e) === ROLE.HUNTER ? P.HUNTER_SPEED : 1);
     else if (e.binaryStar) vmax = P.BINARY_STAR_VMAX * Math.max(1, Math.sqrt(G / P.G));
     else if (e.mass >= P.STAR) vmax = P.VMAX_STAR * Math.sqrt(P.STAR / e.mass);
     const v = Math.hypot(e.vx, e.vy);
