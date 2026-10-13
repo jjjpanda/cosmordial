@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWorld, tick } from '../src/sim.js';
 import { P, ROLE, GLYPHS } from '../src/sim/constants.js';
-import { eventCounts, glyph, roleOf } from '../src/sim/entities.js';
+import { cell, eventCounts, glyph, roleOf } from '../src/sim/entities.js';
 import { advanceLife } from '../src/sim/life.js';
 import { moveEntities } from '../src/sim/motion.js';
 import { collideAndBurst } from '../src/sim/matter.js';
@@ -81,6 +81,35 @@ test('exactly coincident cells and wrapped neighbors separate', () => {
 test('stars keep a compact hitbox as they gain mass', () => {
   assert.equal(physicalRadius({ mass: P.STAR }), 1);
   assert.equal(physicalRadius({ mass: 35 }), 1);
+});
+
+test('photosynthesis weakens as a cell ages and starts fresh in offspring', () => {
+  const star = { x: 0, y: 0, mass: 35 };
+  const traits = [0, 0, 0, 0.8, 0, 0, 0];
+  const parent = cell(8, 0, 0, 0, traits, 5);
+  parent.lifespan = 200;
+  const upkeep = P.UPKEEP + P.TRAIT_COST * traits[3];
+  const gain = (entity) => {
+    entity.energy = 5;
+    advanceLife({
+      w: { w: 40, h: 40 }, wrap: false, mutation: 0,
+      d: (a, b) => [b.x - a.x, b.y - a.y], nearest: () => null,
+      es: [entity, star], cells: [entity], stars: [star], food: [], born: [], events: eventCounts(),
+    });
+    return entity.energy - 5 + upkeep;
+  };
+  const first = gain(parent);
+  for (let i = 1; i < 99; i++) gain(parent);
+  const middle = gain(parent);
+  for (let i = 100; i < 199; i++) gain(parent);
+  const last = gain(parent);
+  assert.ok(first > middle && middle > last);
+  assert.ok(Math.abs(last / first - P.PHOTO_OLD_AGE / (1 - (1 - P.PHOTO_OLD_AGE) / 200)) < 1e-12);
+
+  const offspring = cell(8, 0, 0, 0, traits, 5, parent.gen + 1);
+  offspring.lifespan = 200;
+  assert.equal(offspring.age, 0);
+  assert.ok(Math.abs(gain(offspring) - first) < 1e-12);
 });
 
 test('parasites infect nearby foragers and hunters even when a closer host is immune', () => {

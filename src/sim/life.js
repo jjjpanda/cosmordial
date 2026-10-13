@@ -36,9 +36,10 @@ export function advanceLife(ctx) {
     e.energy -= P.UPKEEP + P.TRAIT_COST * (g[THR] + g[SMELL] + g[BITE] + g[PHOTO] + g[COH]);
 
     e.flux = 0;
+    const photoAge = 1 - (1 - P.PHOTO_OLD_AGE) * Math.min(1, e.age / (e.lifespan ?? P.LIFESPAN));
     for (const [s, f] of e.lit) {
       e.flux += f * s.power;
-      e.energy += g[PHOTO] * (0.5 + g[PHOTO]) * P.PHOTO * f * s.power * Math.min(1, P.LIGHT * s.power / s.demand) * (parasite ? P.PARASITE_LIGHT : 1);
+      e.energy += g[PHOTO] * (0.5 + g[PHOTO]) * P.PHOTO * photoAge * f * s.power * Math.min(1, P.LIGHT * s.power / s.demand) * (parasite ? P.PARASITE_LIGHT : 1);
     }
 
     const prey = roleOf(e) === ROLE.HUNTER ? nearest(e, cells, P.BITE_R, (t) => t.energy <= 0 || !canBite(e, t))?.[0] : null;
