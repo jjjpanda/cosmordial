@@ -20,26 +20,53 @@
   --light: #fff5cc;
   display: block;
   box-sizing: border-box;
-  max-width: 100vw;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 1ch;
   background: var(--bg);
   color: var(--fg);
-  font: min(26px, 2.3dvh, 1vw)/1.15 ui-monospace, Consolas, Menlo, monospace;
+  font: clamp(11px, min(2.3dvh, 1vw), 26px)/1.15 ui-monospace, Consolas, Menlo, monospace;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: max-content 32ch 38ch;
+  grid-template-columns: max-content minmax(0, 32ch) minmax(0, 38ch);
   grid-template-areas: 'field controls status';
   gap: 2ch;
   align-items: start;
+  justify-content: center;
+  min-width: 0;
 }
 
-.controls { grid-area: controls; }
-.u { grid-area: field; }
-.status { grid-area: status; display: grid; gap: .3ch; }
+.controls { grid-area: controls; min-width: 0; }
+.field-scroller {
+  grid-area: field;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--dim);
+}
+.u {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 80), 1ch);
+  grid-auto-rows: 1.15em;
+  width: max-content;
+  font-variant-emoji: text;
+}
+.u > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: center;
+}
+.legend b, .species-key b { display: inline-block; width: 1ch; text-align: center; }
+.status { grid-area: status; display: grid; gap: .3ch; min-width: 0; }
 .status-heading, .pophead { border-top: 1px solid var(--dim); padding-top: .6ch; color: var(--fg); }
-.stats, .events { line-height: 1.4; }
+.stats, .events { line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sparkline { display: block; width: 100%; height: 3.4em; overflow: visible; color: var(--fg); }
 .sparkline polyline { fill: none; stroke: currentColor; stroke-width: 1.7; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
 .species-chart { display: block; width: 100%; height: 4.5em; border-bottom: 1px solid var(--dim); }
@@ -147,6 +174,7 @@ nav {
 button {
   all: unset;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 button:hover,
@@ -194,7 +222,6 @@ pre {
 .legend small { color: var(--fg); font: inherit; }
 
 .e { --ink: var(--empty); }
-.frame { --ink: var(--dim); }
 .t { --ink: var(--trail); }
 .x { --ink: var(--flash); }
 .m { --ink: var(--food); }
@@ -207,7 +234,7 @@ pre {
 .p { --ink: var(--heliotrope); }
 .b { --ink: var(--parasite); }
 .f { --ink: var(--forager); }
-.e, .frame, .t, .x, .m, .r, .s, .s-dim, .s-bright, .a, .h, .p, .b, .f { color: var(--ink); }
+.e, .t, .x, .m, .r, .s, .s-dim, .s-bright, .a, .h, .p, .b, .f { color: var(--ink); }
 .lit { color: color-mix(in srgb, var(--ink), var(--light) var(--glow)); }
 .e.lit { color: color-mix(in srgb, var(--empty), var(--lit-grid-max) var(--glow)); }
 .u .s, .u .s-dim, .u .s-bright {
@@ -217,20 +244,79 @@ pre {
 .infected { text-decoration: underline; text-decoration-color: var(--infection); text-underline-offset: .12em; }
 
 @media (max-width: 1250px) {
-  :host { font-size: min(26px, 2.3dvh, 1.31vw); }
+  :host { font-size: clamp(12px, min(2.2dvh, 1.3vw), 22px); }
   .layout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: 'field field' 'controls status';
-    width: max-content;
+    grid-template-columns: max-content minmax(0, 38ch);
+    grid-template-areas: 'field controls' 'field status';
+    gap: .8ch 2ch;
   }
 }
 
-@media (max-width: 700px) {
-  :host { font-size: min(26px, 1.7dvh, 1.85vw); }
+@media (max-width: 870px) {
+  :host { font-size: clamp(12px, min(1.75dvh, 1.7vw), 18px); }
   .layout {
-    grid-template-columns: max-content;
-    grid-template-areas: 'controls' 'field' 'status';
-    width: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: 'field field' 'controls status';
+    gap: .8ch 2ch;
   }
-  .legend { grid-template-columns: repeat(4, max-content); }
+  .field-scroller { justify-self: center; }
+}
+
+@media (max-width: 600px) {
+  :host { font-size: clamp(16px, 4vw, 20px); padding: 8px; }
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'nav' 'field' 'settings' 'legend' 'status';
+    gap: .8em;
+  }
+  .controls { display: contents; }
+  nav {
+    grid-area: nav;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+  }
+  .nav-break, .shortcut { display: none; }
+  nav button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    grid-column: span 2;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 56px;
+    padding: 4px;
+    border: 1px solid var(--dim);
+    border-radius: 4px;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  nav button[data-k='b'], nav button[data-k='t'] { grid-column: span 3; }
+  nav .action { text-transform: capitalize; }
+  .field-scroller { width: 100%; justify-self: stretch; }
+  .u { font-size: clamp(13px, 3.4vw, 16px); }
+  .settings { grid-area: settings; grid-template-columns: minmax(0, 1fr); gap: .6em; margin: 0; }
+  .settings label { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .setting-control { display: grid; grid-template-columns: minmax(0, 1fr) 4ch; gap: .6em; width: 100%; }
+  .settings input[type='range'] { box-sizing: border-box; width: 100%; height: 56px; margin: 0; }
+  .settings input[type='range']::-webkit-slider-runnable-track { height: 12px; border-radius: 999px; background: var(--dim); }
+  .settings input[type='range']::-webkit-slider-thumb { width: 40px; height: 40px; margin-top: -14px; border: 2px solid var(--bg); border-radius: 50%; background: var(--fg); -webkit-appearance: none; appearance: none; }
+  .settings input[type='range']::-moz-range-track { height: 12px; border-radius: 999px; background: var(--dim); }
+  .settings input[type='range']::-moz-range-thumb { width: 40px; height: 40px; border: 2px solid var(--bg); border-radius: 50%; background: var(--fg); }
+  .settings input[type='range'] { -webkit-appearance: none; appearance: none; background: transparent; }
+  .settings output { min-width: 0; }
+  .legend { grid-area: legend; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); }
+  .status { grid-area: status; }
+  .sparkline { height: 2.5em; }
+  .species-chart { height: 3.5em; }
+}
+
+@media (max-height: 650px) and (min-width: 521px) {
+  nav, .settings { margin-bottom: .2ch; }
+  .legend { padding: .2ch 0; }
+  .status { gap: .1ch; }
+  .status-heading, .pophead { padding-top: .3ch; }
+  .sparkline { height: 2.4em; }
+  .species-chart { height: 3em; }
 }

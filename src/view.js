@@ -73,14 +73,14 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
 <div class="layout">
 <div class="controls">
 <nav>
-  <button data-k=" "></button>
-  <button data-k="s">[s] step</button>
-  <button data-k="r">[r] reset</button>
+  <button data-k=" "><span class="shortcut">[spc]</span> <span class="action"></span></button>
+  <button data-k="s"><span class="shortcut">[s]</span> <span class="action">step</span></button>
+  <button data-k="r"><span class="shortcut">[r]</span> <span class="action">reset</span></button>
   <span class="nav-break" aria-hidden="true"></span>
-  ${PRESETS.map((p, i) => `<button data-k="${i + 1}" data-p="${p}">[${i + 1}] ${p}</button>`).join('')}
+  ${PRESETS.map((p, i) => `<button data-k="${i + 1}" data-p="${p}"><span class="shortcut">[${i + 1}]</span> <span class="action">${p}</span></button>`).join('')}
   <span class="nav-break" aria-hidden="true"></span>
-  <button data-k="b"></button>
-  <button data-k="t"></button>
+  <button data-k="b"><span class="shortcut">[b]</span> <span class="action"></span></button>
+  <button data-k="t"><span class="shortcut">[t]</span> <span class="action"></span></button>
 </nav>
 <div class="settings" role="group" aria-label="Settings">
   <label><span>speed</span><span class="setting-control"><input name="speed" type="range" min="1" max="60"><output></output></span></label>
@@ -93,7 +93,7 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   ${LEGEND.map(legendItem).join('')}
 </section>
 </div>
-<pre class="u"></pre>
+<div class="field-scroller"><div class="u" role="img" aria-label="Simulation field"></div></div>
 <div class="status">
   <div class="status-heading">NOW</div>
   <pre class="stats"></pre>
@@ -117,8 +117,11 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     this.sparklineLine = root.querySelector('.sparkline polyline');
     this.speciesChart = root.querySelector('.species-chart');
     this.speciesPaths = SPECIES.map((role) => root.querySelector(`.species-${role}`));
-    root.addEventListener('mousedown', (e) => e.target.dataset.k && e.preventDefault());
-    root.addEventListener('click', (e) => e.target.dataset.k && this.key(e.target.dataset.k));
+    root.addEventListener('mousedown', (e) => e.target.closest?.('button[data-k]') && e.preventDefault());
+    root.addEventListener('click', (e) => {
+      const button = e.target.closest?.('button[data-k]');
+      if (button) this.key(button.dataset.k);
+    });
     root.addEventListener('input', (e) => {
       if (e.target.type !== 'range') return;
       this.opts[e.target.name] = Number(e.target.value);
@@ -146,6 +149,17 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       trailLength: num(this, 'trail-length', P.TRAIL_LENGTH),
     };
     if (!this.world) this.reset();
+    if (globalThis.ResizeObserver) {
+      this.resizeObserver ??= new ResizeObserver(() => {
+        if (this.clientWidth === this.lastWidth) return;
+        this.lastWidth = this.clientWidth;
+        this.scheduleResize();
+      });
+      this.lastWidth = this.clientWidth;
+      this.resizeObserver.observe(this);
+    }
+    this.onWindowResize ??= () => this.scheduleResize();
+    globalThis.addEventListener?.('resize', this.onWindowResize);
     if (this.getAttribute('autoplay') !== 'false') this.play();
     else this.sync();
     if (this.hasAttribute('autofocus')) this.focus();
@@ -153,6 +167,9 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
 
   disconnectedCallback() {
     this.pause();
+    this.resizeObserver?.disconnect();
+    globalThis.removeEventListener?.('resize', this.onWindowResize);
+    clearTimeout(this.resizeTimer);
   }
 
   attributeChangedCallback(name) {
@@ -206,11 +223,38 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   }
 
   reset() {
-    this.world = createWorld(this.getAttribute('preset') || 'orbit', num(this, 'cols', 80), num(this, 'rows', 30), this.opts.G, this.opts.boundary);
+    const { cols, rows } = this.defaultDimensions();
+    this.world = createWorld(this.getAttribute('preset') || 'orbit', cols, rows, this.opts.G, this.opts.boundary);
     this.history = [];
     this.speciesHistory = [];
     this.draw();
     this.sync();
+  }
+
+  defaultDimensions() {
+    let cols = 80;
+    let rows = 30;
+    if (globalThis.matchMedia?.('(max-width: 600px)').matches) {
+      const style = getComputedStyle(this);
+      const fieldStyle = getComputedStyle(this.view);
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (context) context.font = `${fieldStyle.fontSize} ${fieldStyle.fontFamily}`;
+      const cellWidth = context?.measureText('0').width || parseFloat(fieldStyle.fontSize) * 0.6;
+      const available = this.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2;
+      cols = Math.max(24, Math.min(80, Math.floor(available / cellWidth)));
+      rows = 22;
+    }
+    return { cols: num(this, 'cols', cols), rows: num(this, 'rows', rows) };
+  }
+
+  scheduleResize() {
+    clearTimeout(this.resizeTimer);
+    this.resizeTimer = setTimeout(() => {
+      if (!this.isConnected || !this.world) return;
+      const { cols, rows } = this.defaultDimensions();
+      if (Math.abs(this.world.cols - cols) >= 3 || this.world.rows !== rows) this.reset();
+    }, 150);
   }
 
   key(k) {
@@ -227,9 +271,9 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
 
   sync() {
     const root = this.shadowRoot;
-    root.querySelector('[data-k=" "]').textContent = `[spc] ${this.raf ? 'pause' : 'run'}`;
-    root.querySelector('[data-k="b"]').textContent = `[b] ${this.opts.boundary}`;
-    root.querySelector('[data-k="t"]').textContent = `[t] ${this.getAttribute('theme')}`;
+    root.querySelector('[data-k=" "] .action').textContent = this.raf ? 'pause' : 'run';
+    root.querySelector('[data-k="b"] .action').textContent = `boundary: ${this.opts.boundary}`;
+    root.querySelector('[data-k="t"] .action').textContent = `theme: ${this.getAttribute('theme')}`;
     const preset = this.getAttribute('preset') || 'orbit';
     for (const b of root.querySelectorAll('[data-p]')) b.classList.toggle('on', b.dataset.p === preset);
     for (const i of root.querySelectorAll('input')) {
@@ -302,24 +346,24 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       }
       return strength;
     };
-    const ink = (base, x, y) => {
+    const glowAt = (base, x, y) => {
       const level = Math.round(Math.min(1, lightAt(x, y) / 0.65) * LIGHT_LEVELS);
-      if (!level) return `class="${base}"`;
-      const mix = Math.round(level * (base === 'e' ? 100 : 44) / LIGHT_LEVELS);
-      return `class="${base} lit" style="--glow:${mix}%"`;
+      return Math.round(level * (base === 'e' ? 100 : 44) / LIGHT_LEVELS);
     };
-    const inkByCell = Array(cols * rows);
+    const inkByCell = Array(cols * rows).fill('e');
+    const glowByCell = new Uint8Array(cols * rows);
     for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) inkByCell[y * cols + x] = ink('e', x + 0.5, (y + 0.5) * ROW);
+      for (let x = 0; x < cols; x++) glowByCell[y * cols + x] = glowAt('e', x + 0.5, (y + 0.5) * ROW);
     }
     const pr = new Uint8Array(cols * rows);
-    const put = (x, y, c, k, p) => {
+    const put = (x, y, c, ink, glow, p) => {
       if (x < 0 || x >= cols || y < 0 || y >= rows) return;
       const i = y * cols + x;
       if (p < pr[i]) return;
       pr[i] = p;
       ch[i] = c;
-      inkByCell[i] = k;
+      inkByCell[i] = ink;
+      glowByCell[i] = glow;
     };
 
     for (const e of entities) {
@@ -328,35 +372,44 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       const c = glyph(e);
       if (c === GLYPHS[ROLE.STAR]) {
         const starColor = e.mass < 20 ? 's-dim' : e.mass >= 50 ? 's-bright' : 's';
-        put(x, y, c, `class="${starColor}"`, 4);
-      } else put(x, y, movingGlyph(e, c), ink(e.spore ? `${CLS[c]} infected` : CLS[c], e.x, e.y), e.g ? 3 : c === GLYPHS[ROLE.ROCK] ? 2 : 1);
+        put(x, y, c, starColor, 0, 4);
+      } else {
+        const base = e.spore ? `${CLS[c]} infected` : CLS[c];
+        put(x, y, movingGlyph(e, c), base, glowAt(base, e.x, e.y), e.g ? 3 : c === GLYPHS[ROLE.ROCK] ? 2 : 1);
+      }
     }
     for (let i = 0; i < trails.length; i++) {
       if (pr[i]) continue;
       if (flash[i] > 0.1) {
         ch[i] = SHADE[Math.min(2, Math.floor(flash[i] * 3))];
-        inkByCell[i] = 'class="x"';
-      } else if (trails[i] > 0.08) inkByCell[i] = 'class="t"';
-    }
-
-    const bar = '─'.repeat(cols);
-    let html = `<span class="frame">┌${bar}┐</span>\n`;
-    for (let y = 0; y < rows; y++) {
-      let cur = inkByCell[y * cols];
-      let run = '';
-      html += '<span class="frame">│</span>';
-      for (let x = 0; x < cols; x++) {
-        const i = y * cols + x;
-        if (inkByCell[i] !== cur) {
-          html += `<span ${cur}>${run}</span>`;
-          cur = inkByCell[i];
-          run = '';
-        }
-        run += ch[i];
+        inkByCell[i] = 'x';
+        glowByCell[i] = 0;
+      } else if (trails[i] > 0.08) {
+        inkByCell[i] = 't';
+        glowByCell[i] = 0;
       }
-      html += `<span ${cur}>${run}</span><span class="frame">│</span>\n`;
     }
-    this.view.innerHTML = html + `<span class="frame">└${bar}┘</span>`;
+    this.paintField(cols, rows, ch, inkByCell, glowByCell);
+    return { glyphs: ch, ink: inkByCell, glow: glowByCell };
+  }
+
+  paintField(cols, rows, glyphs, ink, glow) {
+    const count = cols * rows;
+    const rebuild = this.fieldCols !== cols || this.fieldCells?.length !== count;
+    if (rebuild) {
+      this.view.style.setProperty('--cols', cols);
+      this.view.innerHTML = '<span></span>'.repeat(count);
+      this.fieldCells = Array.from(this.view.children);
+      this.fieldCols = cols;
+    }
+    for (let i = 0; i < count; i++) {
+      const cell = this.fieldCells[i];
+      const className = glow[i] ? `${ink[i]} lit` : ink[i];
+      if (cell.className !== className) cell.className = className;
+      if (cell.textContent !== glyphs[i]) cell.textContent = glyphs[i];
+      if (rebuild || glow[i] !== this.lastGlow?.[i]) cell.style.setProperty('--glow', `${glow[i]}%`);
+    }
+    this.lastGlow = glow;
   }
 
   recordPopulation(s) {
