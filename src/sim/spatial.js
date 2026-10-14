@@ -1,5 +1,3 @@
-// The lists are fixed during each simulation phase, but their positions move
-// between phases. Rebuild the index after movement, then query nearby bins.
 const neighborCache = new Map();
 export function neighborBins(columns, rows, wrap) {
   const cacheKey = `${columns},${rows},${wrap}`;
@@ -37,7 +35,7 @@ export function neighborBins(columns, rows, wrap) {
   return neighbors;
 }
 
-export function spatialIndex(list, world, binSize = 8) {
+export function spatialIndex(list, world, binSize = 8, wrap = false) {
   const columns = Math.max(1, Math.ceil(world.w / binSize));
   const rows = Math.max(1, Math.ceil(world.h / binSize));
   const cellWidth = world.w / columns;
@@ -47,13 +45,17 @@ export function spatialIndex(list, world, binSize = 8) {
   const candidates = [];
   const visited = new Uint32Array(columns * rows);
   let queryStamp = 0;
+  let indexedWrap = wrap;
 
-  const rebuild = () => {
+  const rebuild = (wrap = indexedWrap) => {
+    indexedWrap = wrap;
     heads.fill(-1);
     for (let i = list.length - 1; i >= 0; i--) {
       const e = list[i];
-      const x = Math.max(0, Math.min(columns - 1, Math.floor(e.x / cellWidth)));
-      const y = Math.max(0, Math.min(rows - 1, Math.floor(e.y / cellHeight)));
+      const px = wrap ? ((e.x % world.w) + world.w) % world.w : e.x;
+      const py = wrap ? ((e.y % world.h) + world.h) % world.h : e.y;
+      const x = Math.max(0, Math.min(columns - 1, Math.floor(px / cellWidth)));
+      const y = Math.max(0, Math.min(rows - 1, Math.floor(py / cellHeight)));
       const key = y * columns + x;
       next[i] = heads[key];
       heads[key] = i;
@@ -61,6 +63,7 @@ export function spatialIndex(list, world, binSize = 8) {
   };
 
   const nearby = (e, range, wrap) => {
+    if (wrap !== indexedWrap) rebuild(wrap);
     candidates.length = 0;
     const minX = Math.floor((e.x - range) / cellWidth);
     const maxX = Math.floor((e.x + range) / cellWidth);
@@ -82,6 +85,7 @@ export function spatialIndex(list, world, binSize = 8) {
   };
 
   const nearest = (e, range, wrap, skip) => {
+    if (wrap !== indexedWrap) rebuild(wrap);
     let best = null;
     let bestIndex = list.length;
     let bd = range * range;

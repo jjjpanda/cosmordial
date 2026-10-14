@@ -20,8 +20,8 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
   const food = bodies.filter((e) => e.mass < P.ROCK);
   const born = [];
   const events = w.events;
-  const foodIndex = food.length >= 128 ? spatialIndex(food, w) : null;
-  const cellIndex = cells.length >= 128 ? spatialIndex(cells, w) : null;
+  const foodIndex = food.length >= 128 ? spatialIndex(food, w, 8, wrap) : null;
+  const cellIndex = cells.length >= 128 ? spatialIndex(cells, w, 8, wrap) : null;
 
   const nearest = (e, list, range, skip) => {
     const index = list === food ? foodIndex : list === cells ? cellIndex : null;

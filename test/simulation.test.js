@@ -363,6 +363,53 @@ test('spatial nearest matches exhaustive search with skips, ties, and wrapped ed
   }
 });
 
+test('spatial queries find out-of-bounds torus targets before and after rebuilding', () => {
+  const world = { w: 80, h: 60 };
+  for (const [point, target, alternative] of [
+    [{ x: 68, y: 30 }, { x: -10, y: 30 }, { x: 65, y: 30 }],
+    [{ x: 12, y: 30 }, { x: 90, y: 30 }, { x: 15, y: 30 }],
+    [{ x: 30, y: 48 }, { x: 30, y: -10 }, { x: 30, y: 45 }],
+    [{ x: 30, y: 12 }, { x: 30, y: 70 }, { x: 30, y: 15 }],
+  ]) {
+    const index = spatialIndex([target, alternative], world);
+    assert.equal(index.nearest(point, 9, false)?.[0], alternative);
+    assert.equal(index.nearest(point, 9, true)?.[0], target);
+    assert.ok(index.nearby(point, 2.5, true).includes(0));
+    const original = { ...target };
+    Object.assign(target, alternative);
+    index.rebuild();
+    Object.assign(target, original);
+    index.rebuild();
+    assert.equal(index.nearest(point, 9, true)?.[0], target);
+    assert.equal(index.nearest(point, 9, false)?.[0], alternative);
+    assert.deepEqual(target, original, 'indexing must not move the target');
+  }
+});
+
+test('a dense torus tick steers toward emitted food outside the boundary', () => {
+  const food = [
+    { x: -10, y: 30, vx: 0, vy: 0, mass: P.MATTER },
+    { x: 65, y: 30, vx: 0, vy: 0, mass: P.MATTER },
+    ...Array.from({ length: 126 }, (_, i) => ({
+      x: 20 + (i % 12) * 1.5, y: 5 + Math.floor(i / 12) * 1.5,
+      vx: 0, vy: 0, mass: P.MATTER,
+    })),
+  ];
+  const world = {
+    w: 80, h: 60, cols: 80, rows: 30, preset: 'soup', tick: 40,
+    entities: [cell(68, 30, 0, 0, [0.5, 0.25, 0, 0, 0, 0, 0], 10), ...food],
+    trails: new Float32Array(2400), flash: new Float32Array(2400), events: eventCounts(),
+  };
+  separateEntities(world.entities, world, true);
+  assert.equal(food[0].x, -10, 'isolated emitted food stays outside until movement');
+  const normalized = structuredClone(world);
+  normalized.entities[1].x = 70;
+  for (const w of [world, normalized]) withSeed(91, () => tick(w, { G: 0, boundary: 'torus', mutation: 0 }));
+  assert.ok(world.entities[0].vx > 0, 'the nearest food is to the right across the boundary');
+  assert.equal(world.entities[0].vx, normalized.entities[0].vx);
+  assert.equal(world.entities[0].x, normalized.entities[0].x);
+});
+
 test('matter supply scales with grid area while default values stay the same', () => {
   const random = Math.random;
   const replenish = (cols, rows, preset = 'orbit', initialMass = 0, matterBaseArea = 80 * 30) => {

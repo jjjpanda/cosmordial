@@ -322,10 +322,13 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       if (width) width -= (parseFloat(border.borderLeftWidth) || 0) + (parseFloat(border.borderRightWidth) || 0);
       if (height) height -= (parseFloat(border.borderTopWidth) || 0) + (parseFloat(border.borderBottomWidth) || 0);
     }
-    if (width && !height) height = naturalHeight * width / naturalWidth;
-    if (height && !width) width = naturalWidth * height / naturalHeight;
-    width ||= naturalWidth;
-    height ||= naturalHeight;
+    width ||= height ? naturalWidth * height / naturalHeight : naturalWidth;
+    if (!fullscreen) {
+      this.view.style.width = `${width}px`;
+      const availableWidth = this.fieldScroller.clientWidth;
+      if (availableWidth > 0) width = Math.min(width, availableWidth);
+    }
+    height ||= naturalHeight * width / naturalWidth;
     this.view.style.width = `${width}px`;
     this.view.style.height = `${height}px`;
     this.view.style.fontSize = `${fontSize * Math.min(width / naturalWidth, height / naturalHeight)}px`;

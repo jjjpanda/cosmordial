@@ -133,6 +133,44 @@ test('a pixel-sized field fits inside the scroller borders', () => {
   }
 });
 
+test('requested and automatic fields fit a constrained container', () => {
+  const previousStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({
+    borderLeftWidth: '1px', borderRightWidth: '1px',
+    borderTopWidth: '1px', borderBottomWidth: '1px',
+  });
+  try {
+    for (const attributes of [
+      { width: '800', height: '450' }, { width: '800' }, { height: '450' }, {},
+    ]) {
+      const component = Object.create(Cosmordial.prototype);
+      component.getAttribute = (name) => attributes[name] ?? null;
+      component.hasAttribute = (name) => name in attributes;
+      component.world = { cols: 80, rows: 30 };
+      component.fieldFrame = {};
+      component.fieldScroller = { clientWidth: 358, clientHeight: 448 };
+      component.view = { style: { setProperty() {} } };
+      component.measureField = () => ({ fontSize: 16, cellWidth: 9.6 });
+      component.updateFieldLayout();
+      assert.equal(component.view.style.width, '358px');
+      const height = parseFloat(component.view.style.height);
+      const fontSize = parseFloat(component.view.style.fontSize);
+      assert.ok(80 * 9.6 * fontSize / 16 <= 358 + 1e-9);
+      assert.ok(30 * fontSize * 1.15 <= height + 1e-9);
+      assert.ok(Math.abs(height - ('height' in attributes ? 448 : 30 * 16 * 1.15 * 358 / 768)) < 1e-9);
+      // Reflow again after the host becomes narrower, without resetting it.
+      component.fieldScroller.clientWidth = 238;
+      component.updateFieldLayout();
+      assert.equal(component.view.style.width, '238px');
+      component.fieldScroller.clientWidth = 1000;
+      component.updateFieldLayout();
+      assert.ok(parseFloat(component.view.style.width) > 358);
+    }
+  } finally {
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
 test('fullscreen has no F keyboard shortcut', () => {
   const component = Object.create(Cosmordial.prototype);
   component.toggleFullscreen = () => assert.fail('fullscreen must use its button');
