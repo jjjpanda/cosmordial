@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createWorld, tick } from '../src/sim.js';
-import { P, ROLE, GLYPHS } from '../src/sim/constants.js';
+import { createWorld, resizeWorld, tick } from '../src/sim.js';
+import { P, ROLE, GLYPHS, ROW } from '../src/sim/constants.js';
 import { cell, eventCounts, glyph, roleOf } from '../src/sim/entities.js';
 import { advanceLife } from '../src/sim/life.js';
 import { moveEntities } from '../src/sim/motion.js';
-import { collideAndBurst } from '../src/sim/matter.js';
+import { collideAndBurst, replenishMatter } from '../src/sim/matter.js';
 import { delta, physicalRadius, separateEntities } from '../src/sim/space.js';
 
 function withSeed(seed, run) {
@@ -222,6 +222,96 @@ test('a nova drives nearby cells outward and sheds matter', () => {
   assert.ok(target.vx > 2);
   assert.ok(target.energy < 7);
   assert.ok(born.length > 0);
+});
+
+test('collision prefilter preserves pair order and the complete result in both boundaries', () => {
+  for (const wrap of [false, true]) {
+    const base = withSeed(17, () => {
+      const cols = 80;
+      const rows = 30;
+      const entities = Array.from({ length: 40 }, (_, i) => ({
+        x: i < 20 ? 10 + Math.random() * 4 : i < 30 ? 75 + Math.random() * 4 : Math.random() * cols,
+        y: i < 20 ? 20 + Math.random() * 4 : Math.random() * rows * ROW,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2,
+        mass: [P.MATTER, 2, 5.5, 35][i % 4],
+      }));
+      entities.push(
+        { x: 0.5, y: 10, vx: 1, vy: 0, mass: 2 },
+        { x: 79.5, y: 10, vx: -1, vy: 0, mass: 2 },
+      );
+      return { cols, rows, w: cols, h: rows * ROW, entities, flash: new Float32Array(cols * rows), events: eventCounts() };
+    });
+    const run = (geometricDelta) => withSeed(29, () => {
+      const w = structuredClone(base);
+      const bodies = w.entities.filter((e) => !e.g);
+      const stars = bodies.filter((e) => e.mass >= P.STAR);
+      const born = [];
+      collideAndBurst({ w, wrap, d: (a, b) => delta(a, b, w, wrap), bodies, stars, es: w.entities, born, events: w.events, geometricDelta });
+      return { w, born };
+    });
+    assert.deepEqual(run(true), run(false), wrap ? 'torus' : 'box');
+  }
+});
+
+test('collision search revisits later bodies after an impact moves a body to another bin', () => {
+  for (const wrap of [false, true]) {
+    const base = {
+      w: 30, h: 20, cols: 30, rows: 10,
+      entities: [
+        { x: 4.9, y: 10, vx: -1, vy: 0, mass: 5 },
+        { x: 4.7, y: 10, vx: 1, vy: 0, mass: 5 },
+        { x: 10.1, y: 10, vx: 0, vy: 0, mass: 5 },
+      ],
+      flash: new Float32Array(300), events: eventCounts(),
+    };
+    const run = (geometricDelta) => {
+      const w = structuredClone(base);
+      const born = [];
+      collideAndBurst({ w, wrap, d: (a, b) => delta(a, b, w, wrap), bodies: w.entities, stars: [], es: w.entities, born, events: w.events, geometricDelta });
+      return { w, born };
+    };
+    const indexed = run(true);
+    assert.equal(indexed.w.events.impacts, 2);
+    assert.deepEqual(indexed, run(false));
+  }
+});
+
+test('matter supply scales with grid area while default values stay the same', () => {
+  const random = Math.random;
+  const replenish = (cols, rows, preset = 'orbit', initialMass = 0, matterBaseArea = 80 * 30) => {
+    const next = Array.from({ length: initialMass / P.MATTER }, () => ({ x: 0, y: 0, mass: P.MATTER }));
+    const before = next.length;
+    const w = { cols, rows, w: cols, h: rows * ROW, matterBaseArea, preset, tick: 30 };
+    replenishMatter({ w, G: P.G, d: () => [0, 0], stars: [], events: eventCounts() }, next);
+    return next.length - before;
+  };
+  try {
+    Math.random = () => 0.5;
+    assert.equal(replenish(80, 30), 0);
+    assert.equal(replenish(160, 30), 1);
+    assert.equal(replenish(24, 22, 'orbit', 0, 24 * 22), 0);
+    assert.equal(replenish(48, 22, 'orbit', 0, 24 * 22), 1);
+
+    Math.random = () => 0;
+    assert.equal(replenish(80, 30), 1);
+    assert.equal(replenish(80, 30, 'orbit', P.MAX_MASS), 0);
+    assert.equal(replenish(160, 30, 'orbit', P.MAX_MASS), 1);
+
+    Math.random = () => 0.01;
+    assert.equal(replenish(80, 30, 'soup'), 1);
+    assert.equal(replenish(160, 30, 'soup'), 2);
+  } finally {
+    Math.random = random;
+  }
+});
+
+test('world resizing keeps the original matter baseline', () => {
+  const world = withSeed(13, () => createWorld('soup', 24, 22));
+  assert.equal(world.matterBaseArea, 24 * 22);
+  resizeWorld(world, 48, 22);
+  assert.equal(world.cols * world.rows, 2 * world.matterBaseArea);
+  assert.equal(world.matterBaseArea, 24 * 22);
 });
 
 test('trail length controls decay with fixed trail brightness', () => {

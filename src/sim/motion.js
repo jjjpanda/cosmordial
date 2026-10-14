@@ -19,10 +19,12 @@ function* nearbyCellPairs(cells, w, wrap) {
     if (!bins.has(key)) bins.set(key, []);
     bins.get(key).push(i);
   }
+  const candidates = [];
+  const seen = new Set();
   for (let i = 0; i < cells.length; i++) {
     const [x, y] = binOf(cells[i]);
-    const candidates = [];
-    const seen = new Set();
+    candidates.length = 0;
+    seen.clear();
     for (let oy = -1; oy <= 1; oy++) {
       let by = y + oy;
       if (wrap) by = (by + rows) % rows;
@@ -34,7 +36,8 @@ function* nearbyCellPairs(cells, w, wrap) {
         const key = by * columns + bx;
         if (seen.has(key)) continue;
         seen.add(key);
-        for (const j of bins.get(key) ?? []) if (j > i) candidates.push(j);
+        const bucket = bins.get(key);
+        if (bucket) for (const j of bucket) if (j > i) candidates.push(j);
       }
     }
     candidates.sort((a, b) => a - b);

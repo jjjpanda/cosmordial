@@ -3,7 +3,9 @@ import { P, ROW } from './constants.js';
 export const TAU = Math.PI * 2;
 export const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 export const jitter = (s) => (Math.random() - 0.5) * s;
-export const physicalRadius = (e) => e.g ? P.CORE / 2 : e.mass >= P.STAR ? ROW / 2 : Math.min(2.5, 0.7 * Math.sqrt(e.mass / P.MATTER));
+const MAX_MATTER_RADIUS = 2.5;
+export const MAX_BODY_RADIUS = Math.max(ROW / 2, MAX_MATTER_RADIUS);
+export const physicalRadius = (e) => e.g ? P.CORE / 2 : e.mass >= P.STAR ? ROW / 2 : Math.min(MAX_MATTER_RADIUS, 0.7 * Math.sqrt(e.mass / P.MATTER));
 const SEPARATION_EPS = 1e-6;
 const SEPARATION_OVERSHOOT = 1.5;
 const MAX_SEPARATION_PASSES = 1024;
@@ -65,18 +67,27 @@ export function separateEntities(entities, w, wrap) {
   for (let pass = 0; pass < MAX_SEPARATION_PASSES; pass++) {
     const nextActive = new Uint8Array(entities.length);
     const bins = new Map();
+    const activeBins = active ? new Map() : null;
     for (let i = 0; i < entities.length; i++) {
       const [x, y] = binOf(entities[i]);
       const key = y * columns + x;
       if (!bins.has(key)) bins.set(key, []);
       bins.get(key).push(i);
+      if (active && active[i]) {
+        if (!activeBins.has(key)) activeBins.set(key, []);
+        activeBins.get(key).push(i);
+      }
     }
     let overlaps = 0;
+    const candidates = [];
+    const seen = new Set();
     for (let i = 0; i < entities.length; i++) {
       const a = entities[i];
       const [x, y] = binOf(a);
-      const candidates = [];
-      const seen = new Set();
+      // The original loop skips pairs with two inactive entities.
+      const candidateBins = active && !active[i] ? activeBins : bins;
+      candidates.length = 0;
+      seen.clear();
       for (let oy = -1; oy <= 1; oy++) {
         let by = y + oy;
         if (wrap) by = (by + rows) % rows;
@@ -88,7 +99,8 @@ export function separateEntities(entities, w, wrap) {
           const key = by * columns + bx;
           if (seen.has(key)) continue;
           seen.add(key);
-          for (const j of bins.get(key) ?? []) if (j > i) candidates.push(j);
+          const bucket = candidateBins.get(key);
+          if (bucket) for (const j of bucket) if (j > i) candidates.push(j);
         }
       }
       candidates.sort((a, b) => a - b);

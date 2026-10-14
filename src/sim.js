@@ -1,6 +1,6 @@
 export { ROW, P, BURST, PRESETS } from './sim/constants.js';
 export { glyph } from './sim/entities.js';
-export { createWorld, census } from './sim/world.js';
+export { createWorld, resizeWorld, census } from './sim/world.js';
 
 import { P, ROW } from './sim/constants.js';
 import { delta, separateEntities } from './sim/space.js';
@@ -25,7 +25,18 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
     let bd = range * range;
     for (const t of list) {
       if (t === e || t.dead || (skip && skip(t))) continue;
-      const [dx, dy] = d(e, t);
+      let dx = t.x - e.x;
+      if (wrap) {
+        if (dx > w.w / 2) dx -= w.w;
+        else if (dx < -w.w / 2) dx += w.w;
+      }
+      if (dx * dx >= bd) continue;
+      let dy = t.y - e.y;
+      if (wrap) {
+        if (dy > w.h / 2) dy -= w.h;
+        else if (dy < -w.h / 2) dy += w.h;
+      }
+      if (dy * dy >= bd) continue;
       const r2 = dx * dx + dy * dy;
       if (r2 < bd) {
         bd = r2;
@@ -38,7 +49,7 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
   // These groups describe the entities at the start of this tick. Later phases
   // mark removals with `dead` and collect additions in `born`.
   moveEntities({ w, wrap, G, d, nearest, es, cells, heavy, stars, food });
-  collideAndBurst({ w, wrap, d, bodies, stars, es, born, events });
+  collideAndBurst({ w, wrap, d, bodies, stars, es, born, events, geometricDelta: true });
   const next = advanceLife({ w, wrap, mutation, d, nearest, es, cells, stars, food, born, events });
   replenishMatter({ w, G, d, stars, events }, next);
   separateEntities(next, w, wrap);

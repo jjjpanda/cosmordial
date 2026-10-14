@@ -44,5 +44,37 @@ import 'cosmordial';
 ```
 
 ```html
-<cosmordial-universe></cosmordial-universe>
+<cosmordial-universe width="800" height="450" preset="binary" theme="amber"></cosmordial-universe>
 ```
+
+The `width` and `height` attributes set the visible field size in pixels. The simulation grid expands to fill that area. Use **⛶** to enter or leave fullscreen. The **−** and **+** controls appear only in fullscreen and step through 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100%, 110%, 125%, 135%, 150%, 175%, and 200%. Zoom changes the simulation's boundaries and number of cells while keeping the field filled; cells outside a smaller boundary are removed. Use `cols` and `rows` to set the grid size at 100% zoom. On mobile, fullscreen adjusts the number of rows to keep cells close to square. Below 40% zoom, the field uses compact pixel rendering because individual characters become too small to read.
+
+The amount of free matter allowed and its spontaneous generation rate both scale with the grid area. Doubling the area doubles both; new matter builds up over time.
+
+All component options are HTML attributes. Set them in markup or update them from JavaScript:
+
+```js
+const universe = document.querySelector('cosmordial-universe');
+universe.setAttribute('width', '900');
+universe.setAttribute('height', '500');
+universe.setAttribute('speed', '30');
+```
+
+| Attribute | Default | Effect |
+| --- | --- | --- |
+| `width` | automatic | Visible field width in pixels (`80`–`4096`). |
+| `height` | automatic | Visible field height in pixels (`80`–`2160`). |
+| `cols` | `80` on desktop; fits narrow screens | Number of simulation columns. Changing it resets the world. |
+| `rows` | `30` on desktop; `22` on narrow devices | Number of simulation rows. Changing it resets the world. |
+| `preset` | `orbit` | Starting world: `orbit`, `binary`, or `soup`. Changing it resets the world. |
+| `theme` | `ansi` | Color theme: `ansi`, `green`, `amber`, or `colorblind`. |
+| `speed` | `25` | Simulation ticks per second. The view slider covers `1`–`60`. |
+| `gravity` | `0.1` | Gravity strength. The view slider covers `0`–`0.5`. |
+| `mutation` | `0.25` | Mutation rate. The view slider covers `0`–`0.5`. |
+| `trail-length` | `6` | Trail persistence in ticks. The view slider covers `0`–`20`; `0` turns trails off. |
+| `boundary` | `box` | Edge behavior: `box` or `torus` (wraparound). |
+| `autoplay` | on | Set to `false` to start paused. |
+| `transparent` | absent | Add the attribute to make the component background transparent. |
+| `autofocus` | absent | Add the attribute to focus the component when it connects. |
+
+The view also has buttons for run/pause, step, reset, presets, boundary, and theme. When the component has focus, use **Space** to run or pause, **S** to step, **R** to reset, **1**-**3** for presets, **B** for boundary, **T** for theme, and **F** for fullscreen. **+**/**−** zoom only in fullscreen. In fullscreen, Ctrl/Command + **+** or **−** changes simulation zoom instead of browser zoom; Ctrl/Command + **0** resets it to 100%.
