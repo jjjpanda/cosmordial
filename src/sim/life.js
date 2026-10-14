@@ -4,7 +4,10 @@ import { body, cell, roleOf, canBite, isParasite, isHost, mutate, starPower } fr
 
 export function advanceLife(ctx) {
   const { w, wrap, mutation, d, nearest, es, cells, stars, food, born, events } = ctx;
-  for (const e of cells) e.lit = [];
+  for (const e of cells) {
+    e.lit ??= [];
+    e.lit.length = 0;
+  }
   for (const s of stars) {
     if (s.dead) continue;
     s.demand = 0;

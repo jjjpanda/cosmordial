@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>body { margin: 0; background: #000; } cosmordial-universe { width: 390px; }</style>
+<pre id="result">pending</pre>
+<script type="module">
+  const result = document.querySelector('#result');
+  try {
+    const { createWorld, resizeWorld, tick } = await import('../dist/cosmordial.js');
+    const field = document.createElement('cosmordial-universe');
+    field.setAttribute('autoplay', 'false');
+    field.setAttribute('preset', 'soup');
+    field.setAttribute('cols', '24');
+    field.setAttribute('rows', '22');
+    document.body.append(field);
+    field.pause();
+    field.isFieldFullscreen = () => true;
+    field.zoom = 0.2;
+    field.fieldScroller.style.width = '360px';
+    field.fieldScroller.style.height = '780px';
+    let state = 1;
+    Math.random = () => {
+      state = (Math.imul(1664525, state) + 1013904223) >>> 0;
+      return state / 0x100000000;
+    };
+    field.world = createWorld('soup', 24, 22);
+    resizeWorld(field.world, 120, 260);
+    const setupStart = performance.now();
+    for (let i = 0; i < 500; i++) tick(field.world);
+    const setupMs = performance.now() - setupStart;
+    const frames = [];
+    let previous = 0;
+    const frame = (now) => {
+      const start = performance.now();
+      field.step();
+      const duration = performance.now() - start;
+      frames.push({ interval: previous ? now - previous : 0, duration });
+      previous = now;
+      if (frames.length < 30) requestAnimationFrame(frame);
+      else {
+        const values = frames.slice(1);
+        const mean = (key) => values.reduce((sum, value) => sum + value[key], 0) / values.length;
+        result.textContent = JSON.stringify({ setupMs, cells: field.world.entities.filter((e) => e.g).length, entities: field.world.entities.length, frameIntervalMs: mean('interval'), stepAndDrawMs: mean('duration'), maxStepAndDrawMs: Math.max(...values.map((value) => value.duration)) }, null, 2);
+      }
+    };
+    requestAnimationFrame(frame);
+  } catch (error) {
+    result.textContent = `error: ${error.stack || error}`;
+  }
+</script>

@@ -33,7 +33,7 @@ export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G, bou
     for (let i = 0; i < 10; i++) clade(starterGenome(), rand(8, w - 8), rand(8, h - 8), jitter(0.06), jitter(0.06));
   }
 
-  const world = { preset, cols, rows, w, h, matterBaseArea, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
+  const world = { preset, cols, rows, w, h, matterBaseArea, trailOffsetX: 0, trailOffsetY: 0, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
   separateEntities(es, world, boundary === 'torus');
   return world;
 }
@@ -44,8 +44,10 @@ export function resizeWorld(world, cols, rows, boundary = 'box') {
   const oldRows = world.rows;
   const shiftX = (cols - oldCols) / 2;
   const shiftY = (rows - oldRows) / 2;
-  const gridX = Math.floor(shiftX);
-  const gridY = Math.floor(shiftY);
+  const trailShiftX = shiftX + (world.trailOffsetX ?? 0);
+  const trailShiftY = shiftY + (world.trailOffsetY ?? 0);
+  const gridX = Math.round(trailShiftX);
+  const gridY = Math.round(trailShiftY);
   const trails = new Float32Array(cols * rows);
   const flash = new Float32Array(cols * rows);
   const sourceX = Math.max(0, -gridX);
@@ -76,6 +78,8 @@ export function resizeWorld(world, cols, rows, boundary = 'box') {
   world.rows = rows;
   world.w = width;
   world.h = height;
+  world.trailOffsetX = trailShiftX - gridX;
+  world.trailOffsetY = trailShiftY - gridY;
   world.trails = trails;
   world.flash = flash;
   return world;

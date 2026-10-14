@@ -110,6 +110,35 @@ test('width and height attributes size the visible field without resetting the w
   assert.equal(component.fieldScroller.style.height, '');
 });
 
+test('a pixel-sized field fits inside the scroller borders', () => {
+  const previousStyle = globalThis.getComputedStyle;
+  try {
+    const component = Object.create(Cosmordial.prototype);
+    const attributes = { width: '120', height: '100' };
+    component.getAttribute = (name) => attributes[name] ?? null;
+    component.hasAttribute = (name) => name in attributes;
+    component.world = { cols: 10, rows: 5 };
+    component.fieldFrame = {};
+    component.fieldScroller = { clientWidth: 118, clientHeight: 98 };
+    component.view = { style: { setProperty() {} } };
+    component.measureField = () => ({ fontSize: 10, cellWidth: 6 });
+    globalThis.getComputedStyle = (element) => element === component.fieldScroller
+      ? { borderLeftWidth: '1px', borderRightWidth: '1px', borderTopWidth: '1px', borderBottomWidth: '1px' }
+      : {};
+    component.updateFieldLayout();
+    assert.equal(component.view.style.width, '118px');
+    assert.equal(component.view.style.height, '98px');
+  } finally {
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
+test('fullscreen has no F keyboard shortcut', () => {
+  const component = Object.create(Cosmordial.prototype);
+  component.toggleFullscreen = () => assert.fail('fullscreen must use its button');
+  assert.equal(component.key('f'), false);
+});
+
 test('the field fills configured pixels and fullscreen zoom preserves the viewport', () => {
   const getComputedStyle = globalThis.getComputedStyle;
   const document = globalThis.document;
@@ -238,8 +267,9 @@ test('entering fullscreen expands the field when the document reports the shadow
     browserZoomKey({ metaKey: true, code: 'Digit0', key: '0', preventDefault() {}, stopPropagation() {} });
     assert.equal(component.zoom, 1);
     prevented = false;
-    browserZoomWheel({ ctrlKey: true, preventDefault() { prevented = true; } });
+    browserZoomWheel({ ctrlKey: true, deltaY: 90, deltaMode: 0, timeStamp: 1000, preventDefault() { prevented = true; } });
     assert.equal(prevented, true);
+    assert.equal(component.zoom, 0.9);
   } finally {
     globalThis.document = previousDocument;
     globalThis.getComputedStyle = previousGetComputedStyle;
@@ -308,12 +338,14 @@ test('resizing the world moves its centered contents and updates physical bounda
 
 test('20% fullscreen zoom renders densely without creating a cell element per grid slot', () => {
   const previousDocument = globalThis.document;
+  const previousStyle = globalThis.getComputedStyle;
   try {
     const component = Object.create(Cosmordial.prototype);
     const draws = [];
+    let fills = 0;
     const context = {
       setTransform() {}, fillRect(...args) { draws.push(args); },
-      beginPath() {}, arc(...args) { draws.push(args); }, fill() {},
+      beginPath() {}, moveTo() {}, arc(...args) { draws.push(args); }, fill() { fills++; },
       createRadialGradient() { return { addColorStop() {} }; },
     };
     component.fieldFrame = {};
@@ -326,7 +358,7 @@ test('20% fullscreen zoom renders densely without creating a cell element per gr
     component.hasAttribute = (name) => ['cols', 'rows'].includes(name);
     component.world = {
       cols: 4, rows: 2, w: 4, h: 2 * ROW,
-      entities: [{ x: 1, y: ROW / 2, mass: P.MATTER }],
+      entities: [{ x: 1, y: ROW / 2, mass: P.MATTER }, { x: 2, y: ROW / 2, mass: P.MATTER }],
       trails: new Float32Array(8), flash: new Float32Array(8),
     };
     component.opts = { boundary: 'box' };
@@ -340,11 +372,18 @@ test('20% fullscreen zoom renders densely without creating a cell element per gr
     assert.equal(component.view.cells.length, 0);
     assert.equal(draws.filter((args) => args.length === 4).length, 1);
     assert.ok(draws.length >= 2);
+    assert.equal(fills, 1);
+    globalThis.getComputedStyle = () => ({ getPropertyValue: (name) => name === '--food' ? 'rgba(140, 150, 160, 0.5)' : '' });
+    fills = 0;
+    component.renderCompactField();
+    assert.equal(fills, 2);
+    globalThis.getComputedStyle = previousStyle;
     component.setZoom(0.4);
     assert.equal(component.view.style.display, '');
     assert.equal(component.compactCanvas.style.display, 'none');
   } finally {
     globalThis.document = previousDocument;
+    globalThis.getComputedStyle = previousStyle;
   }
 });
 
@@ -352,7 +391,7 @@ test('compact star glow wraps across torus edges', () => {
   const component = Object.create(Cosmordial.prototype);
   const centers = [];
   const context = {
-    setTransform() {}, fillRect() {}, beginPath() {}, arc() {}, fill() {},
+    setTransform() {}, fillRect() {}, beginPath() {}, moveTo() {}, arc() {}, fill() {},
     createRadialGradient(x, y) {
       centers.push([x, y]);
       return { addColorStop() {} };

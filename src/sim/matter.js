@@ -1,6 +1,7 @@
 import { P, BURST } from './constants.js';
 import { TAU, rand, jitter, bound, flash, orbit, physicalRadius, MAX_BODY_RADIUS } from './space.js';
 import { body, cell, starterGenome, starPower } from './entities.js';
+import { neighborBins } from './spatial.js';
 
 const DEFAULT_GRID_AREA = 80 * 30;
 const MAX_BODY_CONTACT = 2 * MAX_BODY_RADIUS;
@@ -12,10 +13,13 @@ function bodyCandidates(bodies, w, wrap) {
   const rows = Math.max(1, Math.floor(w.h / MAX_BODY_CONTACT));
   const cellWidth = w.w / columns;
   const cellHeight = w.h / rows;
-  const bins = new Map();
-  const keys = new Array(bodies.length);
+  const heads = new Int32Array(columns * rows);
+  heads.fill(-1);
+  const next = new Int32Array(bodies.length);
+  const previous = new Int32Array(bodies.length);
+  const keys = new Int32Array(bodies.length);
+  const { offsets: neighborOffsets, keys: neighborKeys } = neighborBins(columns, rows, wrap);
   const candidates = [];
-  const seen = new Set();
   const keyOf = (e) => {
     const x = wrap ? ((e.x % w.w) + w.w) % w.w : Math.max(0, Math.min(w.w, e.x));
     const y = wrap ? ((e.y % w.h) + w.h) % w.h : Math.max(0, Math.min(w.h, e.y));
@@ -23,18 +27,26 @@ function bodyCandidates(bodies, w, wrap) {
     const by = Math.min(rows - 1, Math.floor(y / cellHeight));
     return by * columns + bx;
   };
-  for (let i = 0; i < bodies.length; i++) {
+  for (let i = bodies.length - 1; i >= 0; i--) {
     const key = keyOf(bodies[i]);
     keys[i] = key;
-    if (!bins.has(key)) bins.set(key, new Set());
-    bins.get(key).add(i);
+    previous[i] = -1;
+    next[i] = heads[key];
+    if (heads[key] !== -1) previous[heads[key]] = i;
+    heads[key] = i;
   }
   const updateBin = (i) => {
     const key = keyOf(bodies[i]);
     if (key === keys[i]) return false;
-    bins.get(keys[i]).delete(i);
-    if (!bins.has(key)) bins.set(key, new Set());
-    bins.get(key).add(i);
+    const before = previous[i];
+    const after = next[i];
+    if (before === -1) heads[keys[i]] = after;
+    else next[before] = after;
+    if (after !== -1) previous[after] = before;
+    previous[i] = -1;
+    next[i] = heads[key];
+    if (heads[key] !== -1) previous[heads[key]] = i;
+    heads[key] = i;
     keys[i] = key;
     return true;
   };
@@ -42,23 +54,9 @@ function bodyCandidates(bodies, w, wrap) {
     let start = i + 1;
     while (start < bodies.length && !bodies[i].dead) {
       candidates.length = 0;
-      seen.clear();
-      const x = keys[i] % columns;
-      const y = Math.floor(keys[i] / columns);
-      for (let oy = -1; oy <= 1; oy++) {
-        let by = y + oy;
-        if (wrap) by = (by + rows) % rows;
-        else if (by < 0 || by >= rows) continue;
-        for (let ox = -1; ox <= 1; ox++) {
-          let bx = x + ox;
-          if (wrap) bx = (bx + columns) % columns;
-          else if (bx < 0 || bx >= columns) continue;
-          const key = by * columns + bx;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const bucket = bins.get(key);
-          if (bucket) for (const j of bucket) if (j >= start) candidates.push(j);
-        }
+      for (let n = neighborOffsets[keys[i]]; n < neighborOffsets[keys[i] + 1]; n++) {
+        const key = neighborKeys[n];
+        for (let j = heads[key]; j !== -1; j = next[j]) if (j >= start) candidates.push(j);
       }
       candidates.sort((a, b) => a - b);
       let moved = false;

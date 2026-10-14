@@ -7,6 +7,7 @@ import { delta, separateEntities } from './sim/space.js';
 import { moveEntities } from './sim/motion.js';
 import { collideAndBurst, replenishMatter } from './sim/matter.js';
 import { advanceLife } from './sim/life.js';
+import { spatialIndex } from './sim/spatial.js';
 
 export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trailLength = P.TRAIL_LENGTH } = {}) {
   const wrap = boundary === 'torus';
@@ -19,12 +20,17 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
   const food = bodies.filter((e) => e.mass < P.ROCK);
   const born = [];
   const events = w.events;
+  const foodIndex = food.length >= 128 ? spatialIndex(food, w) : null;
+  const cellIndex = cells.length >= 128 ? spatialIndex(cells, w) : null;
 
   const nearest = (e, list, range, skip) => {
+    const index = list === food ? foodIndex : list === cells ? cellIndex : null;
+    if (index) return index.nearest(e, range, wrap, skip);
     let best = null;
     let bd = range * range;
-    for (const t of list) {
-      if (t === e || t.dead || (skip && skip(t))) continue;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (t === e || t.dead) continue;
       let dx = t.x - e.x;
       if (wrap) {
         if (dx > w.w / 2) dx -= w.w;
@@ -39,6 +45,7 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
       if (dy * dy >= bd) continue;
       const r2 = dx * dx + dy * dy;
       if (r2 < bd) {
+        if (skip && skip(t)) continue;
         bd = r2;
         best = [t, dx, dy, Math.sqrt(r2) || 1];
       }
@@ -48,8 +55,10 @@ export function tick(w, { G = P.G, mutation = P.MUTATION, boundary = 'box', trai
 
   // These groups describe the entities at the start of this tick. Later phases
   // mark removals with `dead` and collect additions in `born`.
-  moveEntities({ w, wrap, G, d, nearest, es, cells, heavy, stars, food });
+  moveEntities({ w, wrap, G, d, nearest, es, cells, heavy, stars, food, geometricDelta: true });
   collideAndBurst({ w, wrap, d, bodies, stars, es, born, events, geometricDelta: true });
+  foodIndex?.rebuild();
+  cellIndex?.rebuild();
   const next = advanceLife({ w, wrap, mutation, d, nearest, es, cells, stars, food, born, events });
   replenishMatter({ w, G, d, stars, events }, next);
   separateEntities(next, w, wrap);

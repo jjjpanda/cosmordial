@@ -77,4 +77,6 @@ universe.setAttribute('speed', '30');
 | `transparent` | absent | Add the attribute to make the component background transparent. |
 | `autofocus` | absent | Add the attribute to focus the component when it connects. |
 
-The view also has buttons for run/pause, step, reset, presets, boundary, and theme. When the component has focus, use **Space** to run or pause, **S** to step, **R** to reset, **1**-**3** for presets, **B** for boundary, **T** for theme, and **F** for fullscreen. **+**/**−** zoom only in fullscreen. In fullscreen, Ctrl/Command + **+** or **−** changes simulation zoom instead of browser zoom; Ctrl/Command + **0** resets it to 100%.
+The view also has buttons for run/pause, step, reset, presets, boundary, and theme. When the component has focus, use **Space** to run or pause, **S** to step, **R** to reset, **1**-**3** for presets, **B** for boundary, and **T** for theme. Use the fullscreen button to enter or leave fullscreen. **+**/**−** zoom only in fullscreen. In fullscreen, Ctrl/Command + **+** or **−** changes simulation zoom instead of browser zoom; Ctrl/Command + **0** resets it to 100%. Ctrl/Command + wheel also changes simulation zoom.
+
+To measure the 20% mobile scenario, run `npm run benchmark -- --presets=soup --seeds=1 --ticks=900 --window=100 --base-cols=24 --base-rows=22 --cols=120 --rows=260 --boundary=box` (or `torus`). For browser frame timing, run `npm run dev` and open `/scripts/browser-benchmark.html` on the printed local server URL. The page reports average frame and step plus draw times after 500 seeded ticks.

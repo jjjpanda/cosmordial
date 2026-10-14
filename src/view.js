@@ -175,7 +175,8 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     });
     this.addEventListener('keydown', (e) => {
       const target = e.composedPath()[0];
-      if (this.isFieldFullscreen() && ['+', '=', '-', 'f'].includes(e.key.toLowerCase()) && !target.matches?.('input, select, textarea')) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this.isFieldFullscreen() && ['+', '=', '-'].includes(e.key.toLowerCase()) && !target.matches?.('input, select, textarea')) {
         if (this.key(e.key.toLowerCase())) e.preventDefault();
         return;
       }
@@ -221,7 +222,16 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     };
     globalThis.document?.addEventListener('keydown', this.onBrowserZoomKey, true);
     this.onBrowserZoomWheel ??= (event) => {
-      if (this.isFieldFullscreen() && (event.ctrlKey || event.metaKey)) event.preventDefault();
+      if (!this.isFieldFullscreen() || !(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const now = event.timeStamp ?? Date.now();
+      if (now - (this.wheelZoomTime ?? 0) > 250 || Math.sign(this.wheelZoomDelta ?? 0) !== Math.sign(event.deltaY)) this.wheelZoomDelta = 0;
+      this.wheelZoomTime = now;
+      this.wheelZoomDelta += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.fieldScroller.clientHeight : 1);
+      if (Math.abs(this.wheelZoomDelta) >= 40) {
+        this.adjustZoom(this.wheelZoomDelta < 0 ? 1 : -1);
+        this.wheelZoomDelta = 0;
+      }
     };
     this.fieldFrame.addEventListener('wheel', this.onBrowserZoomWheel, { passive: false });
     this.syncFieldTools();
@@ -307,6 +317,11 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     const fullscreen = this.isFieldFullscreen();
     let width = fullscreen ? this.fieldScroller.clientWidth : pixelSize(this, 'width');
     let height = fullscreen ? this.fieldScroller.clientHeight : pixelSize(this, 'height');
+    if (!fullscreen && (width || height)) {
+      const border = getComputedStyle(this.fieldScroller);
+      if (width) width -= (parseFloat(border.borderLeftWidth) || 0) + (parseFloat(border.borderRightWidth) || 0);
+      if (height) height -= (parseFloat(border.borderTopWidth) || 0) + (parseFloat(border.borderBottomWidth) || 0);
+    }
     if (width && !height) height = naturalHeight * width / naturalWidth;
     if (height && !width) width = naturalWidth * height / naturalHeight;
     width ||= naturalWidth;
@@ -458,7 +473,6 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     else if (k === 't') this.setAttribute('theme', THEMES[(THEMES.indexOf(this.getAttribute('theme')) + 1) % THEMES.length]);
     else if ((k === '+' || k === '=') && this.isFieldFullscreen()) this.adjustZoom(1);
     else if (k === '-' && this.isFieldFullscreen()) this.adjustZoom(-1);
-    else if (k === 'f') this.toggleFullscreen();
     else return false;
     return true;
   }
@@ -694,21 +708,36 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       context.textAlign = 'center';
       context.textBaseline = 'middle';
     }
+    let circleInk = null;
     for (const entity of entities) {
       const x = Math.floor(entity.x);
       const y = Math.floor(entity.y / ROW);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       const mark = glyph(entity);
-      context.fillStyle = entity.spore ? color('--infection', '#68bbd1') : colors[mark] || color('--fg', '#b8c0c2');
+      const ink = entity.spore ? color('--infection', '#68bbd1') : colors[mark] || color('--fg', '#b8c0c2');
       const centerX = (x + 0.5) * cellWidth;
       const centerY = (y + 0.5) * cellHeight;
-      if (drawText) context.fillText(MOBILE_GLYPHS[movingGlyph(entity, mark)] ?? mark, centerX, centerY);
+      if (drawText) {
+        context.fillStyle = ink;
+        context.fillText(MOBILE_GLYPHS[movingGlyph(entity, mark)] ?? mark, centerX, centerY);
+      }
       else {
-        context.beginPath();
-        context.arc(centerX, centerY, Math.max(0.7, Math.min(cellWidth, cellHeight) * (mark === GLYPHS[ROLE.STAR] ? 0.5 : 0.32)), 0, Math.PI * 2);
-        context.fill();
+        // Repeated translucent fills must remain separate so overlaps retain
+        // the same alpha compositing as the original per-entity renderer.
+        const batchable = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(ink);
+        if (!batchable || ink !== circleInk) {
+          if (circleInk !== null) context.fill();
+          context.fillStyle = ink;
+          context.beginPath();
+          circleInk = batchable ? ink : null;
+        }
+        const radius = Math.max(0.7, Math.min(cellWidth, cellHeight) * (mark === GLYPHS[ROLE.STAR] ? 0.5 : 0.32));
+        context.moveTo(centerX + radius, centerY);
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        if (!batchable) context.fill();
       }
     }
+    if (circleInk !== null) context.fill();
     return { compact: true, cols, rows };
   }
 
