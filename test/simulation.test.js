@@ -214,6 +214,19 @@ test('hunters sprint faster, tire during a chase, and recover afterward', () => 
   assert.equal(hunter.stamina, 1);
 });
 
+test('bonding finds nearby kin with negative starting coordinates', () => {
+  for (const axis of ['x', 'y']) {
+    const cells = [-0.2, 1.2].map((position) => ({
+      x: 0.1, y: 0.1, [axis]: position, vx: 0, vy: 0,
+      g: [0, 0, 0, 0, 0.8, 0.5, 0], energy: 10,
+    }));
+    moveEntities({ w: { w: 24, h: 44 }, wrap: false, G: 0,
+      d: (a, b) => [b.x - a.x, b.y - a.y], nearest: () => null,
+      es: cells, cells, heavy: [], stars: [], food: [] });
+    assert.ok(cells.every((e) => e.guard > 0), axis);
+  }
+});
+
 test('bonding finds nearby kin across a wrapped edge', () => {
   const cells = [
     { x: 0.8, y: 20, vx: 0, vy: 0, g: [0, 0, 0, 0, 0.8, 0.5, 0], energy: 10 },

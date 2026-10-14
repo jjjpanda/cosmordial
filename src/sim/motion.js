@@ -9,7 +9,7 @@ function* nearbyCellPairs(cells, w, wrap) {
   const rows = Math.max(1, Math.floor(w.h / range));
   const cellWidth = w.w / columns;
   const cellHeight = w.h / rows;
-  const binOf = (e) => Math.min(rows - 1, Math.floor(e.y / cellHeight)) * columns + Math.min(columns - 1, Math.floor(e.x / cellWidth));
+  const binOf = (e) => Math.max(0, Math.min(rows - 1, Math.floor(e.y / cellHeight))) * columns + Math.max(0, Math.min(columns - 1, Math.floor(e.x / cellWidth)));
   const heads = new Int32Array(columns * rows);
   heads.fill(-1);
   const next = new Int32Array(cells.length);

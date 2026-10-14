@@ -354,8 +354,8 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   }
 
   toggleFullscreen() {
-    if (this.isFieldFullscreen()) globalThis.document.exitFullscreen();
-    else this.fieldFrame.requestFullscreen?.();
+    if (this.isFieldFullscreen()) globalThis.document.exitFullscreen?.()?.catch(() => {});
+    else this.fieldFrame.requestFullscreen?.()?.catch(() => {});
   }
 
   isFieldFullscreen() {
