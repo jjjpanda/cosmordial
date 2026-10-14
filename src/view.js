@@ -1,5 +1,5 @@
 import css from './style.css';
-import { createWorld, tick, census, glyph, P, ROW, PRESETS } from './sim.js';
+import { createWorld, resizeWorld, tick, census, glyph, P, ROW, PRESETS } from './sim.js';
 import { ROLE, GLYPHS } from './sim/constants.js';
 import { starPower } from './sim/entities.js';
 
@@ -7,9 +7,37 @@ const THEMES = ['ansi', 'green', 'amber', 'colorblind'];
 const SHADE = '░▒▓';
 const MIN_FACING_SPEED = 0.05;
 const LIGHT_LEVELS = 32;
+const ZOOM_LEVELS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.35, 1.5, 1.75, 2];
+const COMPACT_ZOOM = 0.4;
+const DIMENSIONS = { width: [80, 4096], height: [80, 2160] };
 const FACING = {
   [GLYPHS[ROLE.FORAGER]]: { up: '↑', right: '→', down: '↓', left: '←' },
   [GLYPHS[ROLE.HUNTER]]: { up: '▲', right: '►', down: '▼', left: '◄' },
+};
+const MOBILE_GLYPHS = {
+  '·': '.',
+  [SHADE[0]]: '.',
+  [SHADE[1]]: ':',
+  [SHADE[2]]: '#',
+  [GLYPHS[ROLE.FOOD]]: ':',
+  [GLYPHS[ROLE.ROCK]]: 'O',
+  [GLYPHS[ROLE.STAR]]: '*',
+  [GLYPHS[ROLE.CELL]]: 'o',
+  [GLYPHS[ROLE.HELIOTROPE]]: '+',
+  [GLYPHS[ROLE.PARASITE]]: 'x',
+  [FACING[GLYPHS[ROLE.FORAGER]].up]: '^',
+  [FACING[GLYPHS[ROLE.FORAGER]].right]: '>',
+  [FACING[GLYPHS[ROLE.FORAGER]].down]: 'v',
+  [FACING[GLYPHS[ROLE.FORAGER]].left]: '<',
+  [FACING[GLYPHS[ROLE.HUNTER]].up]: 'A',
+  [FACING[GLYPHS[ROLE.HUNTER]].right]: ']',
+  [FACING[GLYPHS[ROLE.HUNTER]].down]: 'V',
+  [FACING[GLYPHS[ROLE.HUNTER]].left]: '[',
+};
+const MOBILE_LEGEND_GLYPHS = {
+  ...MOBILE_GLYPHS,
+  [GLYPHS[ROLE.FORAGER]]: 'f',
+  [GLYPHS[ROLE.HUNTER]]: 'H',
 };
 const CLS = {
   '·': 'e',
@@ -44,7 +72,7 @@ const HATCH_MARK = {
 let hatchSequence = 0;
 const legendItem = (role) => {
   const mark = GLYPHS[role];
-  return `<span data-g="${mark}"><b class="${CLS[mark]}">${mark}</b> ${role} <small>0</small></span>`;
+  return `<span data-g="${mark}"><b class="${CLS[mark]}"><span class="wide-glyph">${mark}</span><span class="mobile-glyph">${MOBILE_LEGEND_GLYPHS[mark]}</span></b> ${role} <small>0</small></span>`;
 };
 const movingGlyph = (e, base) => {
   const facing = FACING[base];
@@ -61,9 +89,14 @@ const num = (el, name, def) => {
   const value = Number(el.getAttribute(name));
   return el.hasAttribute(name) && Number.isFinite(value) ? value : def;
 };
+const pixelSize = (el, name) => {
+  const value = num(el, name, NaN);
+  const [min, max] = DIMENSIONS[name];
+  return Number.isInteger(value) && value >= min && value <= max ? value : null;
+};
 
 export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
-  static observedAttributes = ['cols', 'rows', 'preset', 'theme', 'speed', 'gravity', 'mutation', 'boundary', 'autoplay', 'trail-length'];
+  static observedAttributes = ['width', 'height', 'cols', 'rows', 'preset', 'theme', 'speed', 'gravity', 'mutation', 'boundary', 'autoplay', 'trail-length'];
 
   constructor() {
     super();
@@ -93,7 +126,7 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   ${LEGEND.map(legendItem).join('')}
 </section>
 </div>
-<div class="field-scroller"><div class="u" role="img" aria-label="Simulation field"></div></div>
+<div class="field-frame"><div class="field-scroller"><div class="u" role="img" aria-label="Simulation field"></div><canvas class="compact-field" role="img" aria-label="Simulation field"></canvas></div><div class="field-tools" role="group" aria-label="Field view controls"><span class="zoom-tools"><button data-field="zoom-out" aria-label="Zoom out" title="Zoom out">−</button><output class="zoom-readout">100%</output><button data-field="zoom-in" aria-label="Zoom in" title="Zoom in">+</button></span><button data-field="fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">⛶</button></div></div>
 <div class="status">
   <div class="status-heading">NOW</div>
   <pre class="stats"></pre>
@@ -104,12 +137,16 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     <defs>${SPECIES.map((role) => `<pattern id="${hatchPrefix}-${role}" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4"></rect><path d="${HATCH[role]}"></path></pattern>`).join('')}</defs>
     ${SPECIES.map((role) => `<path class="species-${role}" style="--hatch:url(#${hatchPrefix}-${role})" d=""></path>`).join('')}
   </svg>
-  <div class="species-key">${SPECIES.map((role) => `<span><b class="${CLS[GLYPHS[role]]}" aria-hidden="true">■</b><i aria-hidden="true">${HATCH_MARK[role]}</i> ${role}</span>`).join('')}</div>
+  <div class="species-key">${SPECIES.map((role) => `<span><b class="${CLS[GLYPHS[role]]}" aria-hidden="true"><span class="wide-glyph">■</span><span class="mobile-glyph">${MOBILE_LEGEND_GLYPHS[GLYPHS[role]]}</span></b><i aria-hidden="true">${HATCH_MARK[role]}</i> ${role}</span>`).join('')}</div>
   <div class="status-heading">EVENTS SINCE RESET</div>
   <pre class="events"></pre>
 </div>
 </div>`;
     this.view = root.querySelector('.u');
+    this.fieldFrame = root.querySelector('.field-frame');
+    this.fieldScroller = root.querySelector('.field-scroller');
+    this.compactCanvas = root.querySelector('.compact-field');
+    this.zoom = 1;
     this.status = root.querySelector('.stats');
     this.events = root.querySelector('.events');
     this.pophead = root.querySelector('.pophead');
@@ -121,6 +158,10 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     root.addEventListener('click', (e) => {
       const button = e.target.closest?.('button[data-k]');
       if (button) this.key(button.dataset.k);
+      const fieldButton = e.target.closest?.('button[data-field]');
+      if (fieldButton?.dataset.field === 'zoom-in') this.adjustZoom(1);
+      if (fieldButton?.dataset.field === 'zoom-out') this.adjustZoom(-1);
+      if (fieldButton?.dataset.field === 'fullscreen') this.toggleFullscreen();
     });
     root.addEventListener('input', (e) => {
       if (e.target.type !== 'range') return;
@@ -133,7 +174,13 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       if (e.target.name === 'speed') this.updateSparkline();
     });
     this.addEventListener('keydown', (e) => {
-      if (e.composedPath()[0].matches?.('button, input, select, summary')) return;
+      const target = e.composedPath()[0];
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this.isFieldFullscreen() && ['+', '=', '-'].includes(e.key.toLowerCase()) && !target.matches?.('input, select, textarea')) {
+        if (this.key(e.key.toLowerCase())) e.preventDefault();
+        return;
+      }
+      if (target.matches?.('button, input, select, summary')) return;
       if (this.key(e.key.toLowerCase())) e.preventDefault();
     });
   }
@@ -148,7 +195,46 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       boundary: this.getAttribute('boundary') || 'box',
       trailLength: num(this, 'trail-length', P.TRAIL_LENGTH),
     };
+    this.updateFieldSize();
     if (!this.world) this.reset();
+    this.onFullscreenChange ??= () => {
+      if (!this.isFieldFullscreen()) this.zoom = 1;
+      this.updateFieldSize();
+      const { cols, rows } = this.simulationDimensions();
+      resizeWorld(this.world, cols, rows, this.opts.boundary);
+      this.renderField();
+      this.renderStatus(census(this.world));
+      this.updateFieldLayout();
+      this.syncFieldTools();
+    };
+    this.fieldFrame.addEventListener('fullscreenchange', this.onFullscreenChange);
+    this.onBrowserZoomKey ??= (event) => {
+      if (!this.isFieldFullscreen() || !(event.ctrlKey || event.metaKey)) return;
+      const code = event.code;
+      const zoomIn = ['Equal', 'NumpadAdd'].includes(code) || ['+', '='].includes(event.key);
+      const zoomOut = ['Minus', 'NumpadSubtract'].includes(code) || ['-', '_'].includes(event.key);
+      const reset = ['Digit0', 'Numpad0'].includes(code) || event.key === '0';
+      if (!zoomIn && !zoomOut && !reset) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (reset) this.setZoom(1);
+      else this.adjustZoom(zoomIn ? 1 : -1);
+    };
+    globalThis.document?.addEventListener('keydown', this.onBrowserZoomKey, true);
+    this.onBrowserZoomWheel ??= (event) => {
+      if (!this.isFieldFullscreen() || !(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const now = event.timeStamp ?? Date.now();
+      if (now - (this.wheelZoomTime ?? 0) > 250 || Math.sign(this.wheelZoomDelta ?? 0) !== Math.sign(event.deltaY)) this.wheelZoomDelta = 0;
+      this.wheelZoomTime = now;
+      this.wheelZoomDelta += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.fieldScroller.clientHeight : 1);
+      if (Math.abs(this.wheelZoomDelta) >= 40) {
+        this.adjustZoom(this.wheelZoomDelta < 0 ? 1 : -1);
+        this.wheelZoomDelta = 0;
+      }
+    };
+    this.fieldFrame.addEventListener('wheel', this.onBrowserZoomWheel, { passive: false });
+    this.syncFieldTools();
     if (globalThis.ResizeObserver) {
       this.resizeObserver ??= new ResizeObserver(() => {
         if (this.clientWidth === this.lastWidth) return;
@@ -168,6 +254,9 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   disconnectedCallback() {
     this.pause();
     this.resizeObserver?.disconnect();
+    this.fieldFrame?.removeEventListener('fullscreenchange', this.onFullscreenChange);
+    this.fieldFrame?.removeEventListener('wheel', this.onBrowserZoomWheel);
+    globalThis.document?.removeEventListener('keydown', this.onBrowserZoomKey, true);
     globalThis.removeEventListener?.('resize', this.onWindowResize);
     clearTimeout(this.resizeTimer);
   }
@@ -175,6 +264,10 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   attributeChangedCallback(name) {
     if (!this.world) return;
     if (['cols', 'rows', 'preset'].includes(name)) this.reset();
+    else if (name === 'width' || name === 'height') {
+      this.updateFieldSize();
+      this.updateFieldLayout();
+    }
     else if (name === 'autoplay') this.getAttribute('autoplay') === 'false' ? this.pause() : this.play();
     else {
       if (name === 'speed') this.opts.speed = Math.max(1, num(this, name, 25));
@@ -187,8 +280,101 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
         this.renderField();
       }
       this.sync();
+      if (this.isCompactZoom() && (name === 'theme' || name === 'boundary')) this.renderField();
       if (name === 'speed') this.updateSparkline();
     }
+  }
+
+  updateFieldSize() {
+    const fullscreen = this.isFieldFullscreen();
+    const width = pixelSize(this, 'width');
+    const height = pixelSize(this, 'height');
+    this.fieldScroller.style.width = fullscreen ? '100%' : width ? `${width}px` : '';
+    this.fieldScroller.style.height = fullscreen ? '100%' : height ? `${height}px` : '';
+  }
+
+  measureField() {
+    const previous = this.view.style.fontSize;
+    this.view.style.fontSize = '';
+    const style = getComputedStyle(this.view);
+    const fontSize = parseFloat(style.fontSize);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context) context.font = `${fontSize}px ${style.fontFamily}`;
+    const cellWidth = context?.measureText('0').width || fontSize * 0.6;
+    this.view.style.fontSize = previous;
+    return { fontSize, cellWidth };
+  }
+
+  updateFieldLayout() {
+    if (!this.world || !globalThis.getComputedStyle) return;
+    if (this.isCompactZoom()) return;
+    const { fontSize, cellWidth } = this.measureField();
+    const cols = this.fieldCols || this.world.cols;
+    const rows = this.fieldRows || this.world.rows;
+    const naturalWidth = cols * cellWidth;
+    const naturalHeight = rows * fontSize * 1.15;
+    const fullscreen = this.isFieldFullscreen();
+    let width = fullscreen ? this.fieldScroller.clientWidth : pixelSize(this, 'width');
+    let height = fullscreen ? this.fieldScroller.clientHeight : pixelSize(this, 'height');
+    if (!fullscreen && (width || height)) {
+      const border = getComputedStyle(this.fieldScroller);
+      if (width) width -= (parseFloat(border.borderLeftWidth) || 0) + (parseFloat(border.borderRightWidth) || 0);
+      if (height) height -= (parseFloat(border.borderTopWidth) || 0) + (parseFloat(border.borderBottomWidth) || 0);
+    }
+    width ||= height ? naturalWidth * height / naturalHeight : naturalWidth;
+    if (!fullscreen) {
+      this.view.style.width = `${width}px`;
+      const availableWidth = this.fieldScroller.clientWidth;
+      if (availableWidth > 0) width = Math.min(width, availableWidth);
+    }
+    height ||= naturalHeight * width / naturalWidth;
+    this.view.style.width = `${width}px`;
+    this.view.style.height = `${height}px`;
+    this.view.style.fontSize = `${fontSize * Math.min(width / naturalWidth, height / naturalHeight)}px`;
+    this.view.style.zoom = '1';
+    this.view.style.setProperty('--rows', rows);
+  }
+
+  adjustZoom(direction) {
+    if (!this.isFieldFullscreen() || !direction) return;
+    const levels = direction > 0 ? ZOOM_LEVELS : ZOOM_LEVELS.slice().reverse();
+    const next = levels.find((level) => direction > 0 ? level > this.zoom : level < this.zoom);
+    if (next !== undefined) this.setZoom(next);
+  }
+
+  setZoom(zoom) {
+    if (!this.isFieldFullscreen()) return;
+    const level = ZOOM_LEVELS.reduce((closest, candidate) => Math.abs(candidate - zoom) < Math.abs(closest - zoom) ? candidate : closest);
+    if (level === this.zoom) return;
+    this.zoom = level;
+    const { cols, rows } = this.simulationDimensions();
+    resizeWorld(this.world, cols, rows, this.opts.boundary);
+    this.renderField();
+    this.renderStatus(census(this.world));
+    this.updateFieldLayout();
+    this.syncFieldTools();
+  }
+
+  toggleFullscreen() {
+    if (this.isFieldFullscreen()) globalThis.document.exitFullscreen?.()?.catch(() => {});
+    else this.fieldFrame.requestFullscreen?.()?.catch(() => {});
+  }
+
+  isFieldFullscreen() {
+    return !!this.fieldFrame && (
+      this.shadowRoot?.fullscreenElement === this.fieldFrame ||
+      this.fieldFrame.matches?.(':fullscreen') ||
+      globalThis.document?.fullscreenElement === this.fieldFrame
+    );
+  }
+
+  syncFieldTools() {
+    this.shadowRoot.querySelector('.zoom-readout').textContent = `${Math.round(this.zoom * 100)}%`;
+    const button = this.shadowRoot.querySelector('[data-field="fullscreen"]');
+    const label = this.isFieldFullscreen() ? 'Exit fullscreen' : 'Enter fullscreen';
+    button.setAttribute('aria-label', label);
+    button.title = label;
   }
 
   play() {
@@ -223,11 +409,14 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   }
 
   reset() {
-    const { cols, rows } = this.defaultDimensions();
-    this.world = createWorld(this.getAttribute('preset') || 'orbit', cols, rows, this.opts.G, this.opts.boundary);
+    const base = this.defaultDimensions();
+    const { cols, rows } = this.simulationDimensions();
+    this.world = createWorld(this.getAttribute('preset') || 'orbit', base.cols, base.rows, this.opts.G, this.opts.boundary);
+    resizeWorld(this.world, cols, rows, this.opts.boundary);
     this.history = [];
     this.speciesHistory = [];
     this.draw();
+    this.updateFieldLayout();
     this.sync();
   }
 
@@ -236,11 +425,7 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     let rows = 30;
     if (globalThis.matchMedia?.('(max-width: 600px)').matches) {
       const style = getComputedStyle(this);
-      const fieldStyle = getComputedStyle(this.view);
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      if (context) context.font = `${fieldStyle.fontSize} ${fieldStyle.fontFamily}`;
-      const cellWidth = context?.measureText('0').width || parseFloat(fieldStyle.fontSize) * 0.6;
+      const { cellWidth } = this.measureField();
       const available = this.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 2;
       cols = Math.max(24, Math.min(80, Math.floor(available / cellWidth)));
       rows = 22;
@@ -248,12 +433,36 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     return { cols: num(this, 'cols', cols), rows: num(this, 'rows', rows) };
   }
 
+  simulationDimensions() {
+    const { cols, rows } = this.defaultDimensions();
+    if (!this.isFieldFullscreen()) return { cols, rows };
+    const zoomedCols = Math.max(1, Math.round(cols / this.zoom));
+    const width = this.fieldScroller?.clientWidth;
+    const height = this.fieldScroller?.clientHeight;
+    const mobile = globalThis.matchMedia?.('(max-width: 600px), (pointer: coarse)').matches;
+    const zoomedRows = mobile && width && height
+      ? Math.max(1, Math.round(zoomedCols * height / width))
+      : Math.max(1, Math.round(rows / this.zoom));
+    return { cols: zoomedCols, rows: zoomedRows };
+  }
+
+  isCompactZoom() {
+    return this.isFieldFullscreen() && this.zoom < COMPACT_ZOOM && !!this.compactCanvas;
+  }
+
   scheduleResize() {
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       if (!this.isConnected || !this.world) return;
-      const { cols, rows } = this.defaultDimensions();
-      if (Math.abs(this.world.cols - cols) >= 3 || this.world.rows !== rows) this.reset();
+      const { cols, rows } = this.simulationDimensions();
+      if (this.isFieldFullscreen()) {
+        resizeWorld(this.world, cols, rows, this.opts.boundary);
+        this.renderField();
+        this.renderStatus(census(this.world));
+      }
+      else if (Math.abs(this.world.cols - cols) >= 3 || this.world.rows !== rows) this.reset();
+      else if (this.fieldMobile !== !!globalThis.matchMedia?.('(max-width: 600px)').matches) this.renderField();
+      this.updateFieldLayout();
     }, 150);
   }
 
@@ -265,6 +474,8 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     else if (preset) this.setAttribute('preset', preset);
     else if (k === 'b') this.setAttribute('boundary', this.opts.boundary === 'torus' ? 'box' : 'torus');
     else if (k === 't') this.setAttribute('theme', THEMES[(THEMES.indexOf(this.getAttribute('theme')) + 1) % THEMES.length]);
+    else if ((k === '+' || k === '=') && this.isFieldFullscreen()) this.adjustZoom(1);
+    else if (k === '-' && this.isFieldFullscreen()) this.adjustZoom(-1);
     else return false;
     return true;
   }
@@ -276,7 +487,7 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     root.querySelector('[data-k="t"] .action').textContent = `theme: ${this.getAttribute('theme')}`;
     const preset = this.getAttribute('preset') || 'orbit';
     for (const b of root.querySelectorAll('[data-p]')) b.classList.toggle('on', b.dataset.p === preset);
-    for (const i of root.querySelectorAll('input')) {
+    for (const i of root.querySelectorAll('input[type="range"]')) {
       i.value = this.opts[i.name];
       i.nextElementSibling.textContent = this.opts[i.name];
     }
@@ -325,6 +536,22 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   }
 
   renderField() {
+    if (this.isCompactZoom()) {
+      if (this.fieldCells?.length) {
+        this.view.innerHTML = '';
+        this.fieldCells = this.fieldClasses = this.fieldMarks = this.lastGlow = null;
+        this.fieldCols = this.fieldRows = 0;
+      }
+      this.view.style.display = 'none';
+      this.compactCanvas.style.display = 'block';
+      return this.renderCompactField();
+    }
+    this.view.style.display = '';
+    if (this.compactCanvas) {
+      this.compactCanvas.style.display = 'none';
+      // Release the hidden canvas backing store when glyph rendering resumes.
+      if (this.compactCanvas.width) this.compactCanvas.width = this.compactCanvas.height = 0;
+    }
     const { cols, rows, entities, trails, flash } = this.world;
     const ch = Array(cols * rows).fill('·');
     const wrap = this.opts?.boundary === 'torus';
@@ -347,13 +574,38 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
       return strength;
     };
     const glowAt = (base, x, y) => {
+      if (!stars.length) return 0;
       const level = Math.round(Math.min(1, lightAt(x, y) / 0.65) * LIGHT_LEVELS);
       return Math.round(level * (base === 'e' ? 100 : 44) / LIGHT_LEVELS);
     };
     const inkByCell = Array(cols * rows).fill('e');
     const glowByCell = new Uint8Array(cols * rows);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) glowByCell[y * cols + x] = glowAt('e', x + 0.5, (y + 0.5) * ROW);
+    if (stars.length) {
+      const lightByCell = new Float64Array(cols * rows);
+      for (const star of stars) {
+        const xs = [];
+        const ys = [];
+        for (let x = 0; x < cols; x++) {
+          let dx = x + 0.5 - star.x;
+          if (wrap && Math.abs(dx) > cols / 2) dx -= Math.sign(dx) * cols;
+          if (Math.abs(dx) < star.reach) xs.push([x, dx]);
+        }
+        for (let y = 0; y < rows; y++) {
+          let dy = (y + 0.5) * ROW - star.y;
+          if (wrap && Math.abs(dy) > rows * ROW / 2) dy -= Math.sign(dy) * rows * ROW;
+          if (Math.abs(dy) < star.reach) ys.push([y, dy]);
+        }
+        for (const [y, dy] of ys) {
+          for (const [x, dx] of xs) {
+            const distance = Math.hypot(dx, dy);
+            if (distance < star.reach) lightByCell[y * cols + x] += star.power * (1 - distance / star.reach) ** 1.5;
+          }
+        }
+      }
+      for (let i = 0; i < glowByCell.length; i++) {
+        const level = Math.round(Math.min(1, lightByCell[i] / 0.65) * LIGHT_LEVELS);
+        glowByCell[i] = Math.round(level * 100 / LIGHT_LEVELS);
+      }
     }
     const pr = new Uint8Array(cols * rows);
     const put = (x, y, c, ink, glow, p) => {
@@ -393,22 +645,148 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     return { glyphs: ch, ink: inkByCell, glow: glowByCell };
   }
 
+  renderCompactField() {
+    const canvas = this.compactCanvas;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    const width = Math.max(1, this.fieldScroller.clientWidth);
+    const height = Math.max(1, this.fieldScroller.clientHeight);
+    const scale = Math.min(globalThis.devicePixelRatio || 1, 2);
+    const pixelWidth = Math.round(width * scale);
+    const pixelHeight = Math.round(height * scale);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
+    context.globalAlpha = 1;
+    const style = globalThis.getComputedStyle?.(this);
+    const color = (name, fallback) => style?.getPropertyValue?.(name).trim() || fallback;
+    context.fillStyle = color('--bg', '#000');
+    context.fillRect(0, 0, width, height);
+
+    const { cols, rows, entities, trails, flash } = this.world;
+    const cellWidth = width / cols;
+    const cellHeight = height / rows;
+    const lightColor = color('--light', '#fff5cc');
+    const wrap = this.opts?.boundary === 'torus';
+    for (const star of entities) {
+      if (star.g || star.mass < P.STAR) continue;
+      const centerX = star.x * cellWidth;
+      const centerY = star.y / ROW * cellHeight;
+      const radius = P.LIGHT_R * Math.sqrt(starPower(star)) * Math.max(cellWidth, cellHeight / ROW);
+      const centersX = [centerX];
+      const centersY = [centerY];
+      if (wrap && centerX < radius) centersX.push(centerX + width);
+      if (wrap && centerX > width - radius) centersX.push(centerX - width);
+      if (wrap && centerY < radius) centersY.push(centerY + height);
+      if (wrap && centerY > height - radius) centersY.push(centerY - height);
+      for (const x of centersX) {
+        for (const y of centersY) {
+          const glow = context.createRadialGradient(x, y, 0, x, y, radius);
+          glow.addColorStop(0, lightColor);
+          glow.addColorStop(1, 'transparent');
+          context.globalAlpha = 0.18;
+          context.fillStyle = glow;
+          context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        }
+      }
+    }
+    const trailColor = color('--trail', '#5d7391');
+    const flashColor = color('--flash', '#f2c46e');
+    const markWidth = Math.max(0.7, cellWidth * 0.35);
+    const markHeight = Math.max(0.7, cellHeight * 0.35);
+    for (let i = 0; i < trails.length; i++) {
+      const intensity = flash[i] > 0.1 ? flash[i] : trails[i] > 0.08 ? trails[i] : 0;
+      if (!intensity) continue;
+      context.fillStyle = flash[i] > 0.1 ? flashColor : trailColor;
+      context.globalAlpha = Math.min(0.7, Math.max(0.1, intensity * 0.55));
+      context.fillRect(((i % cols) + 0.5) * cellWidth - markWidth / 2, (Math.floor(i / cols) + 0.5) * cellHeight - markHeight / 2, markWidth, markHeight);
+    }
+    context.globalAlpha = 1;
+    const colors = {
+      [GLYPHS[ROLE.FOOD]]: color('--food', '#8b8f94'),
+      [GLYPHS[ROLE.ROCK]]: color('--rock', '#929ba4'),
+      [GLYPHS[ROLE.STAR]]: color('--star', '#fff0a8'),
+      [GLYPHS[ROLE.CELL]]: color('--cell', '#8d9295'),
+      [GLYPHS[ROLE.FORAGER]]: color('--forager', '#f3a65d'),
+      [GLYPHS[ROLE.HUNTER]]: color('--hunter', '#ef6b68'),
+      [GLYPHS[ROLE.HELIOTROPE]]: color('--heliotrope', '#67ce7d'),
+      [GLYPHS[ROLE.PARASITE]]: color('--parasite', '#68bbd1'),
+    };
+    const drawText = cellWidth >= 7 && cellHeight >= 9;
+    if (drawText) {
+      context.font = `${Math.min(cellHeight * 0.9, cellWidth * 1.5)}px ui-monospace, monospace`;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+    }
+    let circleInk = null;
+    for (const entity of entities) {
+      const x = Math.floor(entity.x);
+      const y = Math.floor(entity.y / ROW);
+      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+      const mark = glyph(entity);
+      const ink = entity.spore ? color('--infection', '#68bbd1') : colors[mark] || color('--fg', '#b8c0c2');
+      const centerX = (x + 0.5) * cellWidth;
+      const centerY = (y + 0.5) * cellHeight;
+      if (drawText) {
+        context.fillStyle = ink;
+        context.fillText(MOBILE_GLYPHS[movingGlyph(entity, mark)] ?? mark, centerX, centerY);
+      }
+      else {
+        // Repeated translucent fills must remain separate so overlaps retain
+        // the same alpha compositing as the original per-entity renderer.
+        const batchable = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(ink);
+        if (!batchable || ink !== circleInk) {
+          if (circleInk !== null) context.fill();
+          context.fillStyle = ink;
+          context.beginPath();
+          circleInk = batchable ? ink : null;
+        }
+        const radius = Math.max(0.7, Math.min(cellWidth, cellHeight) * (mark === GLYPHS[ROLE.STAR] ? 0.5 : 0.32));
+        context.moveTo(centerX + radius, centerY);
+        context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        if (!batchable) context.fill();
+      }
+    }
+    if (circleInk !== null) context.fill();
+    return { compact: true, cols, rows };
+  }
+
   paintField(cols, rows, glyphs, ink, glow) {
     const count = cols * rows;
+    const mobile = !!globalThis.matchMedia?.('(max-width: 600px)').matches;
     const rebuild = this.fieldCols !== cols || this.fieldCells?.length !== count;
     if (rebuild) {
       this.view.style.setProperty('--cols', cols);
+      this.view.style.setProperty('--rows', rows);
       this.view.innerHTML = '<span></span>'.repeat(count);
       this.fieldCells = Array.from(this.view.children);
       this.fieldCols = cols;
+      this.fieldRows = rows;
+      this.fieldClasses = new Array(count);
+      this.fieldMarks = new Array(count);
+      this.updateFieldLayout();
     }
     for (let i = 0; i < count; i++) {
-      const cell = this.fieldCells[i];
       const className = glow[i] ? `${ink[i]} lit` : ink[i];
-      if (cell.className !== className) cell.className = className;
-      if (cell.textContent !== glyphs[i]) cell.textContent = glyphs[i];
-      if (rebuild || glow[i] !== this.lastGlow?.[i]) cell.style.setProperty('--glow', `${glow[i]}%`);
+      const mark = mobile ? MOBILE_GLYPHS[glyphs[i]] ?? glyphs[i] : glyphs[i];
+      const classChanged = this.fieldClasses[i] !== className;
+      const markChanged = this.fieldMarks[i] !== mark;
+      const glowChanged = rebuild || glow[i] !== this.lastGlow?.[i];
+      if (!classChanged && !markChanged && !glowChanged) continue;
+      const cell = this.fieldCells[i];
+      if (classChanged) {
+        if (cell.className !== className) cell.className = className;
+        this.fieldClasses[i] = className;
+      }
+      if (markChanged) {
+        if (cell.textContent !== mark) cell.textContent = mark;
+        this.fieldMarks[i] = mark;
+      }
+      if (glowChanged) cell.style.setProperty('--glow', `${glow[i]}%`);
     }
+    this.fieldMobile = mobile;
     this.lastGlow = glow;
   }
 

@@ -1,17 +1,25 @@
 import { performance } from 'node:perf_hooks';
-import { createWorld, PRESETS, tick } from '../src/sim.js';
+import { createWorld, resizeWorld, PRESETS, tick } from '../src/sim.js';
 import { roleOf } from '../src/sim/entities.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
-  const match = /^--(ticks|seeds|presets)=(.+)$/.exec(arg);
+  const match = /^--(ticks|seeds|presets|cols|rows|base-cols|base-rows|boundary|window|sample)=(.+)$/.exec(arg);
   if (!match) throw new Error(`Unknown argument: ${arg}`);
   return [match[1], match[2]];
 }));
 const ticks = args.ticks === undefined ? 5000 : Number(args.ticks);
 const seeds = args.seeds === undefined ? 3 : Number(args.seeds);
 const presets = args.presets === undefined ? PRESETS : args.presets.split(',');
-if (!Number.isSafeInteger(ticks) || ticks < 1 || !Number.isSafeInteger(seeds) || seeds < 1 || presets.some((preset) => !PRESETS.includes(preset))) {
-  throw new Error('Use positive integer --ticks and --seeds values and presets from orbit,binary,soup');
+const cols = args.cols === undefined ? 80 : Number(args.cols);
+const rows = args.rows === undefined ? 30 : Number(args.rows);
+const baseCols = args['base-cols'] === undefined ? cols : Number(args['base-cols']);
+const baseRows = args['base-rows'] === undefined ? rows : Number(args['base-rows']);
+const boundary = args.boundary ?? 'box';
+const windowTicks = args.window === undefined ? Math.min(1000, ticks) : Number(args.window);
+const sampleTicks = args.sample === undefined ? 0 : Number(args.sample);
+if (!Number.isSafeInteger(sampleTicks) || sampleTicks < 0) throw new Error('--sample must be a nonnegative integer (0 disables memory checkpoints)');
+if ([ticks, seeds, cols, rows, baseCols, baseRows, windowTicks].some((n) => !Number.isSafeInteger(n) || n < 1) || windowTicks > ticks || presets.some((preset) => !PRESETS.includes(preset)) || !['box', 'torus'].includes(boundary)) {
+  throw new Error('Use positive integer --ticks, --seeds, --cols, --rows, --base-cols, --base-rows, and --window (at most ticks); presets from orbit,binary,soup; and --boundary=box|torus');
 }
 
 const originalRandom = Math.random;
@@ -24,24 +32,28 @@ const seedRandom = (seed) => {
 };
 
 console.log(`Run: ${ticks} ticks × ${seeds} seeds × ${presets.join(', ')}`);
-console.log('preset seed final(hunter/total) avgHunter% present% peakHunter% nonHunterFreeTicks maxPop first1kMs last1kMs heapMB');
+console.log('Field:', cols, rows, 'base:', baseCols, baseRows, 'boundary:', boundary);
+console.log(`preset seed final(hunter/total) avgHunter% present% peakHunter% nonHunterFreeTicks maxPop first${windowTicks}Ms last${windowTicks}Ms heapMB arrayBuffersMB rssMB peakRssMB`);
 try {
   for (const preset of presets) {
     for (let seed = 1; seed <= seeds; seed++) {
       seedRandom(seed);
       global.gc?.();
-      const world = createWorld(preset);
+      // Match the UI: seed at its normal size, then resize into the zoomed field.
+      const world = createWorld(preset, baseCols, baseRows, undefined, boundary);
+      resizeWorld(world, cols, rows, boundary);
       let hunterShareSum = 0;
       let hunterPresentTicks = 0;
       let peakHunterShare = 0;
       let nonHunterFreeTicks = 0;
       let maxPop = 0;
-      let first1kMs = 0;
-      let last1kStart = 0;
+      let firstWindowMs = 0;
+      let lastWindowStart = 0;
+      let peakRssBytes = 0;
       const start = performance.now();
       for (let i = 1; i <= ticks; i++) {
-        if (i === Math.max(1, ticks - 999)) last1kStart = performance.now();
-        tick(world);
+        if (i === ticks - windowTicks + 1) lastWindowStart = performance.now();
+        tick(world, { boundary });
         let hunters = 0;
         let nonHunters = 0;
         let total = 0;
@@ -57,14 +69,24 @@ try {
         peakHunterShare = Math.max(peakHunterShare, share);
         nonHunterFreeTicks += nonHunters === 0;
         maxPop = Math.max(maxPop, total);
-        if (i === Math.min(1000, ticks)) first1kMs = performance.now() - start;
+        if (i === windowTicks) firstWindowMs = performance.now() - start;
+        if (i % 100 === 0 || i === ticks) peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+        if (sampleTicks && (i % sampleTicks === 0 || i === ticks)) {
+          global.gc?.();
+          const memory = process.memoryUsage();
+          const mb = (bytes) => +(bytes / 1048576).toFixed(1);
+          console.log(JSON.stringify({ preset, seed, tick: i, entities: world.entities.length, pop: total,
+            elapsedMs: Math.round(performance.now() - start), forcedGC: !!global.gc,
+            heapMB: mb(memory.heapUsed), heapTotalMB: mb(memory.heapTotal), arrayBuffersMB: mb(memory.arrayBuffers), rssMB: mb(memory.rss) }));
+        }
       }
-      const last1kMs = performance.now() - last1kStart;
+      const lastWindowMs = performance.now() - lastWindowStart;
       global.gc?.();
       const finalHunters = world.entities.filter((entity) => entity.g && roleOf(entity) === 'hunter').length;
       const finalTotal = world.entities.filter((entity) => entity.g).length;
-      const heapMB = process.memoryUsage().heapUsed / 1048576;
-      console.log(`${preset} ${seed} ${finalHunters}/${finalTotal} ${(100 * hunterShareSum / ticks).toFixed(1)} ${(100 * hunterPresentTicks / ticks).toFixed(1)} ${(100 * peakHunterShare).toFixed(1)} ${nonHunterFreeTicks} ${maxPop} ${first1kMs.toFixed(0)} ${last1kMs.toFixed(0)} ${heapMB.toFixed(1)}`);
+      const memory = process.memoryUsage();
+      const mb = (bytes) => (bytes / 1048576).toFixed(1);
+      console.log(`${preset} ${seed} ${finalHunters}/${finalTotal} ${(100 * hunterShareSum / ticks).toFixed(1)} ${(100 * hunterPresentTicks / ticks).toFixed(1)} ${(100 * peakHunterShare).toFixed(1)} ${nonHunterFreeTicks} ${maxPop} ${firstWindowMs.toFixed(0)} ${lastWindowMs.toFixed(0)} ${mb(memory.heapUsed)} ${mb(memory.arrayBuffers)} ${mb(memory.rss)} ${mb(peakRssBytes)}`);
     }
   }
 } finally {

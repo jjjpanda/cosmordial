@@ -1,17 +1,105 @@
 import { P, BURST } from './constants.js';
-import { TAU, rand, jitter, bound, flash, orbit, physicalRadius } from './space.js';
+import { TAU, rand, jitter, bound, flash, orbit, physicalRadius, MAX_BODY_RADIUS } from './space.js';
 import { body, cell, starterGenome, starPower } from './entities.js';
+import { neighborBins } from './spatial.js';
+
+const DEFAULT_GRID_AREA = 80 * 30;
+const MAX_BODY_CONTACT = 2 * MAX_BODY_RADIUS;
+
+function bodyCandidates(bodies, w, wrap) {
+  // A contacting pair must be in neighboring bins. Yield indices in their
+  // original order, and search again if an impact moves the current body.
+  const columns = Math.max(1, Math.floor(w.w / MAX_BODY_CONTACT));
+  const rows = Math.max(1, Math.floor(w.h / MAX_BODY_CONTACT));
+  const cellWidth = w.w / columns;
+  const cellHeight = w.h / rows;
+  const heads = new Int32Array(columns * rows);
+  heads.fill(-1);
+  const next = new Int32Array(bodies.length);
+  const previous = new Int32Array(bodies.length);
+  const keys = new Int32Array(bodies.length);
+  const { offsets: neighborOffsets, keys: neighborKeys } = neighborBins(columns, rows, wrap);
+  const candidates = [];
+  const keyOf = (e) => {
+    const x = wrap ? ((e.x % w.w) + w.w) % w.w : Math.max(0, Math.min(w.w, e.x));
+    const y = wrap ? ((e.y % w.h) + w.h) % w.h : Math.max(0, Math.min(w.h, e.y));
+    const bx = Math.min(columns - 1, Math.floor(x / cellWidth));
+    const by = Math.min(rows - 1, Math.floor(y / cellHeight));
+    return by * columns + bx;
+  };
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const key = keyOf(bodies[i]);
+    keys[i] = key;
+    previous[i] = -1;
+    next[i] = heads[key];
+    if (heads[key] !== -1) previous[heads[key]] = i;
+    heads[key] = i;
+  }
+  const updateBin = (i) => {
+    const key = keyOf(bodies[i]);
+    if (key === keys[i]) return false;
+    const before = previous[i];
+    const after = next[i];
+    if (before === -1) heads[keys[i]] = after;
+    else next[before] = after;
+    if (after !== -1) previous[after] = before;
+    previous[i] = -1;
+    next[i] = heads[key];
+    if (heads[key] !== -1) previous[heads[key]] = i;
+    heads[key] = i;
+    keys[i] = key;
+    return true;
+  };
+  return function* from(i) {
+    let start = i + 1;
+    while (start < bodies.length && !bodies[i].dead) {
+      candidates.length = 0;
+      for (let n = neighborOffsets[keys[i]]; n < neighborOffsets[keys[i] + 1]; n++) {
+        const key = neighborKeys[n];
+        for (let j = heads[key]; j !== -1; j = next[j]) if (j >= start) candidates.push(j);
+      }
+      candidates.sort((a, b) => a - b);
+      let moved = false;
+      for (const j of candidates) {
+        yield j;
+        start = j + 1;
+        moved = updateBin(i);
+        updateBin(j);
+        if (moved || bodies[i].dead) break;
+      }
+      if (!moved) return;
+    }
+  };
+}
 
 export function collideAndBurst(ctx) {
-  const { w, wrap, d, bodies, stars, es, born, events } = ctx;
+  const { w, wrap, d, bodies, stars, es, born, events, geometricDelta = false } = ctx;
   const bursts = [];
+  const nearby = geometricDelta ? bodyCandidates(bodies, w, wrap) : null;
+  function* remaining(i) { for (let j = i + 1; j < bodies.length; j++) yield j; }
   for (let i = 0; i < bodies.length; i++) {
     const a = bodies[i];
     if (a.dead) continue;
-    for (let j = i + 1; j < bodies.length; j++) {
+    for (const j of nearby ? nearby(i) : remaining(i)) {
       const b = bodies[j];
       if (b.dead) continue;
+      if (geometricDelta) {
+        // This is the same wrapped displacement as delta(). It is only enabled
+        // by tick(), which supplies delta as d; direct callers keep their d.
+        let x = b.x - a.x;
+        let y = b.y - a.y;
+        if (wrap) {
+          if (x > w.w / 2) x -= w.w;
+          else if (x < -w.w / 2) x += w.w;
+          if (y > w.h / 2) y -= w.h;
+          else if (y < -w.h / 2) y += w.h;
+        }
+        if (Math.abs(x) > MAX_BODY_CONTACT || Math.abs(y) > MAX_BODY_CONTACT) continue;
+      }
       const [dx, dy] = d(a, b);
+      // Neither body can extend farther than MAX_BODY_RADIUS from its center.
+      // Keep every potentially colliding pair in the original iteration order.
+      if (Math.abs(dx) > MAX_BODY_CONTACT || Math.abs(dy) > MAX_BODY_CONTACT) continue;
       const r = physicalRadius(a) + physicalRadius(b);
       if (dx * dx + dy * dy > r * r) continue;
       const stars2 = Math.min(a.mass, b.mass) >= P.STAR;
@@ -109,13 +197,19 @@ export function collideAndBurst(ctx) {
 export function replenishMatter(ctx, next) {
   const { w, G, d, stars, events } = ctx;
   let mass = next.reduce((m, e) => (!e.g && e.mass < P.STAR ? m + e.mass : m), 0);
+  const areaScale = w.cols * w.rows / (w.matterBaseArea || DEFAULT_GRID_AREA);
+  const maxMass = P.MAX_MASS * areaScale;
   const spawnChance = w.preset === 'soup' ? (w.tick >= 30 ? P.SOUP_SPAWN_P : 0) : P.SPAWN_P;
-  if (mass < P.MAX_MASS && Math.random() < spawnChance) {
-    next.push(body(rand(0, w.w), rand(0, w.h), jitter(0.05), jitter(0.05), P.MATTER));
-    mass += P.MATTER;
+  if (mass < maxMass) {
+    const rate = spawnChance * areaScale;
+    const count = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+    for (let i = 0; i < count && mass < maxMass; i++) {
+      next.push(body(rand(0, w.w), rand(0, w.h), jitter(0.05), jitter(0.05), P.MATTER));
+      mass += P.MATTER;
+    }
   }
   for (const s of stars) {
-    if (s.dead || s.mass - P.MATTER < P.STAR || mass >= P.MAX_MASS || Math.random() >= P.EMIT_P) continue;
+    if (s.dead || s.mass - P.MATTER < P.STAR || mass >= maxMass || Math.random() >= P.EMIT_P) continue;
     s.mass -= P.MATTER;
     next.push(body(...orbit(s, s.mass, rand(5, 12), rand(0, TAU), G), P.MATTER));
     mass += P.MATTER;

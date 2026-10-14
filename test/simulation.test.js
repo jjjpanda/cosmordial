@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createWorld, tick } from '../src/sim.js';
-import { P, ROLE, GLYPHS } from '../src/sim/constants.js';
+import { createWorld, resizeWorld, tick } from '../src/sim.js';
+import { P, ROLE, GLYPHS, ROW } from '../src/sim/constants.js';
 import { cell, eventCounts, glyph, roleOf } from '../src/sim/entities.js';
 import { advanceLife } from '../src/sim/life.js';
 import { moveEntities } from '../src/sim/motion.js';
-import { collideAndBurst } from '../src/sim/matter.js';
+import { collideAndBurst, replenishMatter } from '../src/sim/matter.js';
+import { spatialIndex } from '../src/sim/spatial.js';
 import { delta, physicalRadius, separateEntities } from '../src/sim/space.js';
 
 function withSeed(seed, run) {
@@ -145,6 +146,18 @@ test('parasites infect nearby foragers and hunters even when a closer host is im
   assert.deepEqual(contact([0.2, 0.2, 0.2, 0.2, 0.2, 0, 0]), { infected: false, events: 0 });
 });
 
+test('fertile cells continue reproducing above 400 living cells', () => {
+  const cells = Array.from({ length: 401 }, (_, i) => ({
+    x: i + 10, y: 10, vx: 0, vy: 0, g: [0, 0, 0, 0, 0, 0, 0],
+    energy: 30, age: 10, gen: 0, lastBirth: 0, lifespan: 1000,
+  }));
+  const born = [];
+  const events = eventCounts();
+  const next = advanceLife({ w: { w: 1000, h: 1000 }, wrap: false, mutation: 0, d: () => [0, 0], nearest: () => null, es: cells, cells, stars: [], food: [], born, events });
+  assert.ok(events.births > 0);
+  assert.ok(next.filter((e) => e.g).length > 401);
+});
+
 test('a non-hunter bite earns one earlier hunter birth', () => {
   const hunter = () => ({ x: 10, y: 10, vx: 0, vy: 0, g: [0, 0, 0.8, 0, 0, 0, 0], energy: 30, age: 19, gen: 0, lastBirth: 0, guard: 0 });
   const prey = (x) => ({ x, y: 10, vx: 0, vy: 0, g: [0, 0.8, 0, 0, 0, 0, 0], energy: 10, age: 10, gen: 0, guard: 0 });
@@ -201,6 +214,19 @@ test('hunters sprint faster, tire during a chase, and recover afterward', () => 
   assert.equal(hunter.stamina, 1);
 });
 
+test('bonding finds nearby kin with negative starting coordinates', () => {
+  for (const axis of ['x', 'y']) {
+    const cells = [-0.2, 1.2].map((position) => ({
+      x: 0.1, y: 0.1, [axis]: position, vx: 0, vy: 0,
+      g: [0, 0, 0, 0, 0.8, 0.5, 0], energy: 10,
+    }));
+    moveEntities({ w: { w: 24, h: 44 }, wrap: false, G: 0,
+      d: (a, b) => [b.x - a.x, b.y - a.y], nearest: () => null,
+      es: cells, cells, heavy: [], stars: [], food: [] });
+    assert.ok(cells.every((e) => e.guard > 0), axis);
+  }
+});
+
 test('bonding finds nearby kin across a wrapped edge', () => {
   const cells = [
     { x: 0.8, y: 20, vx: 0, vy: 0, g: [0, 0, 0, 0, 0.8, 0.5, 0], energy: 10 },
@@ -222,6 +248,264 @@ test('a nova drives nearby cells outward and sheds matter', () => {
   assert.ok(target.vx > 2);
   assert.ok(target.energy < 7);
   assert.ok(born.length > 0);
+});
+
+test('collision prefilter preserves pair order and the complete result in both boundaries', () => {
+  for (const wrap of [false, true]) {
+    const base = withSeed(17, () => {
+      const cols = 80;
+      const rows = 30;
+      const entities = Array.from({ length: 40 }, (_, i) => ({
+        x: i < 20 ? 10 + Math.random() * 4 : i < 30 ? 75 + Math.random() * 4 : Math.random() * cols,
+        y: i < 20 ? 20 + Math.random() * 4 : Math.random() * rows * ROW,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2,
+        mass: [P.MATTER, 2, 5.5, 35][i % 4],
+      }));
+      entities.push(
+        { x: 0.5, y: 10, vx: 1, vy: 0, mass: 2 },
+        { x: 79.5, y: 10, vx: -1, vy: 0, mass: 2 },
+      );
+      return { cols, rows, w: cols, h: rows * ROW, entities, flash: new Float32Array(cols * rows), events: eventCounts() };
+    });
+    const run = (geometricDelta) => withSeed(29, () => {
+      const w = structuredClone(base);
+      const bodies = w.entities.filter((e) => !e.g);
+      const stars = bodies.filter((e) => e.mass >= P.STAR);
+      const born = [];
+      collideAndBurst({ w, wrap, d: (a, b) => delta(a, b, w, wrap), bodies, stars, es: w.entities, born, events: w.events, geometricDelta });
+      return { w, born };
+    });
+    assert.deepEqual(run(true), run(false), wrap ? 'torus' : 'box');
+  }
+});
+
+test('collision search revisits later bodies after an impact moves a body to another bin', () => {
+  for (const wrap of [false, true]) {
+    const base = {
+      w: 30, h: 20, cols: 30, rows: 10,
+      entities: [
+        { x: 4.9, y: 10, vx: -1, vy: 0, mass: 5 },
+        { x: 4.7, y: 10, vx: 1, vy: 0, mass: 5 },
+        { x: 10.1, y: 10, vx: 0, vy: 0, mass: 5 },
+      ],
+      flash: new Float32Array(300), events: eventCounts(),
+    };
+    const run = (geometricDelta) => {
+      const w = structuredClone(base);
+      const born = [];
+      collideAndBurst({ w, wrap, d: (a, b) => delta(a, b, w, wrap), bodies: w.entities, stars: [], es: w.entities, born, events: w.events, geometricDelta });
+      return { w, born };
+    };
+    const indexed = run(true);
+    assert.equal(indexed.w.events.impacts, 2);
+    assert.deepEqual(indexed, run(false));
+  }
+});
+
+test('spatial search includes every in-range entity in list order after movement', () => {
+  for (const wrap of [false, true]) {
+    for (const [cols, rows] of [[80, 30], [7, 4]]) {
+      withSeed(53, () => {
+        const world = { w: cols, h: rows * ROW };
+        const list = Array.from({ length: 180 }, () => ({ x: Math.random() * world.w, y: Math.random() * world.h }));
+        const index = spatialIndex(list, world);
+        for (let phase = 0; phase < 2; phase++) {
+          for (let q = 0; q < 30; q++) {
+            const point = { x: Math.random() * world.w, y: Math.random() * world.h };
+            for (const range of [2.3, 12, 36, 200]) {
+              const candidates = [...index.nearby(point, range, wrap)];
+              assert.deepEqual(candidates, [...new Set(candidates)].sort((a, b) => a - b));
+              const found = new Set(candidates);
+              for (let i = 0; i < list.length; i++) {
+                const [dx, dy] = delta(point, list[i], world, wrap);
+                if (dx * dx + dy * dy < range * range) assert.ok(found.has(i), `missed ${i} in ${cols}x${rows} ${wrap ? 'torus' : 'box'}`);
+              }
+            }
+          }
+          for (const e of list) {
+            e.x = Math.random() * world.w;
+            e.y = Math.random() * world.h;
+          }
+          index.rebuild();
+        }
+      });
+    }
+  }
+});
+
+test('spatial nearest matches exhaustive search with skips, ties, and wrapped edges', () => {
+  for (const wrap of [false, true]) {
+    for (const world of [{ w: 80, h: 60 }, { w: 7, h: 8 }]) {
+      withSeed(71, () => {
+        const list = Array.from({ length: 240 }, (_, i) => ({ x: Math.random() * world.w, y: Math.random() * world.h, skip: i % 4 === 0 }));
+        list[0] = { x: 2, y: 3 };
+        list[1] = { x: 4, y: 3 };
+        const index = spatialIndex(list, world);
+        const points = [{ x: 3, y: 3 }, ...Array.from({ length: 80 }, () => ({ x: Math.random() * world.w, y: Math.random() * world.h }))];
+        for (const point of points) for (const range of [1, 3, 12, 100]) {
+          let expected = null;
+          let bd = range * range;
+          for (const t of list) {
+            if (t.skip) continue;
+            const [dx, dy] = delta(point, t, world, wrap);
+            if (dx * dx >= bd || dy * dy >= bd) continue;
+            const r2 = dx * dx + dy * dy;
+            if (r2 < bd) {
+              bd = r2;
+              expected = [t, dx, dy, Math.sqrt(r2) || 1];
+            }
+          }
+          assert.deepEqual(index.nearest(point, range, wrap, (t) => t.skip), expected);
+        }
+      });
+    }
+  }
+});
+
+test('spatial queries find out-of-bounds torus targets before and after rebuilding', () => {
+  const world = { w: 80, h: 60 };
+  for (const [point, target, alternative] of [
+    [{ x: 68, y: 30 }, { x: -10, y: 30 }, { x: 65, y: 30 }],
+    [{ x: 12, y: 30 }, { x: 90, y: 30 }, { x: 15, y: 30 }],
+    [{ x: 30, y: 48 }, { x: 30, y: -10 }, { x: 30, y: 45 }],
+    [{ x: 30, y: 12 }, { x: 30, y: 70 }, { x: 30, y: 15 }],
+  ]) {
+    const index = spatialIndex([target, alternative], world);
+    assert.equal(index.nearest(point, 9, false)?.[0], alternative);
+    assert.equal(index.nearest(point, 9, true)?.[0], target);
+    assert.ok(index.nearby(point, 2.5, true).includes(0));
+    const original = { ...target };
+    Object.assign(target, alternative);
+    index.rebuild();
+    Object.assign(target, original);
+    index.rebuild();
+    assert.equal(index.nearest(point, 9, true)?.[0], target);
+    assert.equal(index.nearest(point, 9, false)?.[0], alternative);
+    assert.deepEqual(target, original, 'indexing must not move the target');
+  }
+});
+
+test('a dense torus tick steers toward emitted food outside the boundary', () => {
+  const food = [
+    { x: -10, y: 30, vx: 0, vy: 0, mass: P.MATTER },
+    { x: 65, y: 30, vx: 0, vy: 0, mass: P.MATTER },
+    ...Array.from({ length: 126 }, (_, i) => ({
+      x: 20 + (i % 12) * 1.5, y: 5 + Math.floor(i / 12) * 1.5,
+      vx: 0, vy: 0, mass: P.MATTER,
+    })),
+  ];
+  const world = {
+    w: 80, h: 60, cols: 80, rows: 30, preset: 'soup', tick: 40,
+    entities: [cell(68, 30, 0, 0, [0.5, 0.25, 0, 0, 0, 0, 0], 10), ...food],
+    trails: new Float32Array(2400), flash: new Float32Array(2400), events: eventCounts(),
+  };
+  separateEntities(world.entities, world, true);
+  assert.equal(food[0].x, -10, 'isolated emitted food stays outside until movement');
+  const normalized = structuredClone(world);
+  normalized.entities[1].x = 70;
+  for (const w of [world, normalized]) withSeed(91, () => tick(w, { G: 0, boundary: 'torus', mutation: 0 }));
+  assert.ok(world.entities[0].vx > 0, 'the nearest food is to the right across the boundary');
+  assert.equal(world.entities[0].vx, normalized.entities[0].vx);
+  assert.equal(world.entities[0].x, normalized.entities[0].x);
+});
+
+test('matter supply scales with grid area while default values stay the same', () => {
+  const random = Math.random;
+  const replenish = (cols, rows, preset = 'orbit', initialMass = 0, matterBaseArea = 80 * 30) => {
+    const next = Array.from({ length: initialMass / P.MATTER }, () => ({ x: 0, y: 0, mass: P.MATTER }));
+    const before = next.length;
+    const w = { cols, rows, w: cols, h: rows * ROW, matterBaseArea, preset, tick: 30 };
+    replenishMatter({ w, G: P.G, d: () => [0, 0], stars: [], events: eventCounts() }, next);
+    return next.length - before;
+  };
+  try {
+    Math.random = () => 0.5;
+    assert.equal(replenish(80, 30), 0);
+    assert.equal(replenish(160, 30), 1);
+    assert.equal(replenish(24, 22, 'orbit', 0, 24 * 22), 0);
+    assert.equal(replenish(48, 22, 'orbit', 0, 24 * 22), 1);
+
+    Math.random = () => 0;
+    assert.equal(replenish(80, 30), 1);
+    assert.equal(replenish(80, 30, 'orbit', P.MAX_MASS), 0);
+    assert.equal(replenish(160, 30, 'orbit', P.MAX_MASS), 1);
+
+    Math.random = () => 0.01;
+    assert.equal(replenish(80, 30, 'soup'), 1);
+    assert.equal(replenish(160, 30, 'soup'), 2);
+    assert.equal(replenish(400, 150), 9);
+    assert.equal(replenish(400, 150, 'orbit', P.MAX_MASS * 20), 9);
+  } finally {
+    Math.random = random;
+  }
+});
+
+test('world resizing keeps the original matter baseline', () => {
+  const world = withSeed(13, () => createWorld('soup', 24, 22));
+  assert.equal(world.matterBaseArea, 24 * 22);
+  resizeWorld(world, 48, 22);
+  assert.equal(world.cols * world.rows, 2 * world.matterBaseArea);
+  assert.equal(world.matterBaseArea, 24 * 22);
+});
+
+test('trails return to their original cells after odd-sized resize steps', () => {
+  const world = { cols: 4, rows: 4, w: 4, h: 8, entities: [{ x: 1.5, y: 3, mass: P.MATTER }], trails: new Float32Array(16), flash: new Float32Array(16) };
+  world.trails[1 + 4] = 1;
+  world.flash[1 + 4] = 0.5;
+  for (const [cols, rows] of [[5, 5], [6, 6], [4, 4]]) resizeWorld(world, cols, rows);
+  assert.equal(world.entities[0].x, 1.5);
+  assert.equal(world.entities[0].y, 3);
+  assert.equal(world.trails[1 + 4], 1);
+  assert.equal(world.flash[1 + 4], 0.5);
+});
+
+test('separation keeps every cell in an overfull torus after zooming in', () => {
+  const entities = Array.from({ length: 900 }, (_, i) => ({
+    x: 1 + (i % 30) * 1.2, y: 1 + Math.floor(i / 30) * 1.2,
+    g: [0, 0, 0, 0, 0, 0, 0],
+  }));
+  const world = { cols: 40, rows: 20, w: 40, h: 40, entities, trails: new Float32Array(800), flash: new Float32Array(800) };
+  resizeWorld(world, 8, 4, 'torus');
+  assert.doesNotThrow(() => separateEntities(world.entities, world, true));
+  assert.equal(world.entities.length, 900);
+});
+
+test('an overfull torus can switch to box and continue ticking without losing cells', () => {
+  withSeed(1, () => {
+    const world = createWorld('soup', 24, 22, 0, 'torus');
+    resizeWorld(world, 120, 260, 'torus');
+    world.entities = Array.from({ length: 900 }, (_, i) =>
+      cell(2 + (i % 30) * 1.2, 2 + Math.floor(i / 30) * 1.2, 0, 0, [0, 0, 0, 0, 0, 0, 0], 10));
+    resizeWorld(world, 12, 26, 'torus');
+    for (const boundary of ['torus', 'box', 'box']) {
+      tick(world, { G: 0, boundary });
+      assert.equal(world.entities.filter((e) => e.g).length, 900);
+      assert.ok(world.entities.every((e) => Number.isFinite(e.x) && e.x >= 0 && e.x < world.w && e.y >= 0 && e.y < world.h));
+    }
+    assert.equal(world.tick, 3);
+  });
+});
+
+test('an impossible box packing below the area bound reaches its pass limit safely', () => {
+  const world = { w: 1, h: 1 };
+  const entities = Array.from({ length: 3 }, () => ({ x: 0.5, y: 0.5, g: [0] }));
+  assert.doesNotThrow(() => separateEntities(entities, world, false));
+  assert.equal(entities.length, 3);
+  assert.ok(entities.every((e) => Number.isFinite(e.x) && Number.isFinite(e.y)));
+});
+
+test('separation scratch buffers handle population and world-size changes', () => {
+  const world = { w: 80, h: 60, tick: 0 };
+  for (const count of [2, 140, 3, 70, 1, 20]) {
+    world.w = count === 3 ? 20 : 80;
+    world.entities = Array.from({ length: count }, (_, i) => ({ x: 2 + (i % 8) * 2, y: 2 + Math.floor(i / 8) * 2, g: [0] }));
+    world.entities[0].x = world.entities[1]?.x ?? 2;
+    for (const wrap of [false, true]) {
+      separateEntities(world.entities, world, wrap);
+      assertSeparated(world, wrap);
+    }
+  }
 });
 
 test('trail length controls decay with fixed trail brightness', () => {

@@ -1,6 +1,7 @@
 import { P, ROLE, THR, SMELL, BITE, PHOTO, COH } from './constants.js';
 import { jitter, bound } from './space.js';
 import { roleOf, kin, canBite, isParasite, isHost, isHuntTarget, starPower } from './entities.js';
+import { neighborBins } from './spatial.js';
 
 function* nearbyCellPairs(cells, w, wrap) {
   const range = P.PARASITE_BOND_MAX;
@@ -8,34 +9,23 @@ function* nearbyCellPairs(cells, w, wrap) {
   const rows = Math.max(1, Math.floor(w.h / range));
   const cellWidth = w.w / columns;
   const cellHeight = w.h / rows;
-  const binOf = (e) => [
-    Math.min(columns - 1, Math.floor(e.x / cellWidth)),
-    Math.min(rows - 1, Math.floor(e.y / cellHeight)),
-  ];
-  const bins = new Map();
-  for (let i = 0; i < cells.length; i++) {
-    const [x, y] = binOf(cells[i]);
-    const key = y * columns + x;
-    if (!bins.has(key)) bins.set(key, []);
-    bins.get(key).push(i);
+  const binOf = (e) => Math.max(0, Math.min(rows - 1, Math.floor(e.y / cellHeight))) * columns + Math.max(0, Math.min(columns - 1, Math.floor(e.x / cellWidth)));
+  const heads = new Int32Array(columns * rows);
+  heads.fill(-1);
+  const next = new Int32Array(cells.length);
+  const { offsets: neighborOffsets, keys: neighborKeys } = neighborBins(columns, rows, wrap);
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const key = binOf(cells[i]);
+    next[i] = heads[key];
+    heads[key] = i;
   }
+  const candidates = [];
   for (let i = 0; i < cells.length; i++) {
-    const [x, y] = binOf(cells[i]);
-    const candidates = [];
-    const seen = new Set();
-    for (let oy = -1; oy <= 1; oy++) {
-      let by = y + oy;
-      if (wrap) by = (by + rows) % rows;
-      else if (by < 0 || by >= rows) continue;
-      for (let ox = -1; ox <= 1; ox++) {
-        let bx = x + ox;
-        if (wrap) bx = (bx + columns) % columns;
-        else if (bx < 0 || bx >= columns) continue;
-        const key = by * columns + bx;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        for (const j of bins.get(key) ?? []) if (j > i) candidates.push(j);
-      }
+    const keyOfCell = binOf(cells[i]);
+    candidates.length = 0;
+    for (let n = neighborOffsets[keyOfCell]; n < neighborOffsets[keyOfCell + 1]; n++) {
+      const key = neighborKeys[n];
+      for (let j = heads[key]; j !== -1; j = next[j]) if (j > i) candidates.push(j);
     }
     candidates.sort((a, b) => a - b);
     for (const j of candidates) yield [cells[i], cells[j]];
@@ -43,19 +33,46 @@ function* nearbyCellPairs(cells, w, wrap) {
 }
 
 export function moveEntities(ctx) {
-  const { w, wrap, G, d, nearest, es, cells, heavy, stars, food } = ctx;
+  const { w, wrap, G, d, nearest, es, cells, heavy, stars, food, geometricDelta = false } = ctx;
+  const soft2 = P.SOFT ** 2;
   for (const e of es) {
     e.ax = 0;
     e.guard = 0;
     if (e.g) e.hostDrain = 0;
     e.ay = 0;
-    for (const s of heavy) {
-      if (s === e) continue;
-      const [dx, dy] = d(e, s);
-      const r2 = dx * dx + dy * dy + P.SOFT ** 2;
-      const f = (G * s.mass) / (r2 * Math.sqrt(r2));
-      e.ax += f * dx;
-      e.ay += f * dy;
+    if (geometricDelta && !wrap) {
+      for (const s of heavy) {
+        if (s === e) continue;
+        const dx = s.x - e.x;
+        const dy = s.y - e.y;
+        const r2 = dx * dx + dy * dy + soft2;
+        const f = (G * s.mass) / (r2 * Math.sqrt(r2));
+        e.ax += f * dx;
+        e.ay += f * dy;
+      }
+    } else if (geometricDelta) {
+      for (const s of heavy) {
+        if (s === e) continue;
+        let dx = s.x - e.x;
+        let dy = s.y - e.y;
+        if (dx > w.w / 2) dx -= w.w;
+        else if (dx < -w.w / 2) dx += w.w;
+        if (dy > w.h / 2) dy -= w.h;
+        else if (dy < -w.h / 2) dy += w.h;
+        const r2 = dx * dx + dy * dy + soft2;
+        const f = (G * s.mass) / (r2 * Math.sqrt(r2));
+        e.ax += f * dx;
+        e.ay += f * dy;
+      }
+    } else {
+      for (const s of heavy) {
+        if (s === e) continue;
+        const [dx, dy] = d(e, s);
+        const r2 = dx * dx + dy * dy + soft2;
+        const f = (G * s.mass) / (r2 * Math.sqrt(r2));
+        e.ax += f * dx;
+        e.ay += f * dy;
+      }
     }
   }
 

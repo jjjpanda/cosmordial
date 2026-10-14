@@ -2,7 +2,7 @@ import { P, ROW } from './constants.js';
 import { TAU, rand, jitter, orbit, separateEntities } from './space.js';
 import { body, cell, eventCounts, glyph, starterGenome } from './entities.js';
 
-export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G, boundary = 'box') {
+export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G, boundary = 'box', matterBaseArea = cols * rows) {
   const w = cols;
   const h = rows * ROW;
   const c = { x: w / 2, y: h / 2, vx: 0, vy: 0 };
@@ -33,8 +33,55 @@ export function createWorld(preset = 'orbit', cols = 80, rows = 30, G = P.G, bou
     for (let i = 0; i < 10; i++) clade(starterGenome(), rand(8, w - 8), rand(8, h - 8), jitter(0.06), jitter(0.06));
   }
 
-  const world = { preset, cols, rows, w, h, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
+  const world = { preset, cols, rows, w, h, matterBaseArea, trailOffsetX: 0, trailOffsetY: 0, entities: es, trails: new Float32Array(cols * rows), flash: new Float32Array(cols * rows), events: eventCounts(), tick: 0 };
   separateEntities(es, world, boundary === 'torus');
+  return world;
+}
+
+export function resizeWorld(world, cols, rows, boundary = 'box') {
+  if (world.cols === cols && world.rows === rows) return world;
+  const oldCols = world.cols;
+  const oldRows = world.rows;
+  const shiftX = (cols - oldCols) / 2;
+  const shiftY = (rows - oldRows) / 2;
+  const trailShiftX = shiftX + (world.trailOffsetX ?? 0);
+  const trailShiftY = shiftY + (world.trailOffsetY ?? 0);
+  const gridX = Math.round(trailShiftX);
+  const gridY = Math.round(trailShiftY);
+  const trails = new Float32Array(cols * rows);
+  const flash = new Float32Array(cols * rows);
+  const sourceX = Math.max(0, -gridX);
+  const sourceY = Math.max(0, -gridY);
+  const targetX = Math.max(0, gridX);
+  const targetY = Math.max(0, gridY);
+  const copyWidth = Math.max(0, Math.min(oldCols - sourceX, cols - targetX));
+  const copyHeight = Math.max(0, Math.min(oldRows - sourceY, rows - targetY));
+  for (let y = 0; y < copyHeight; y++) {
+    const source = (sourceY + y) * oldCols + sourceX;
+    const target = (targetY + y) * cols + targetX;
+    trails.set(world.trails.subarray(source, source + copyWidth), target);
+    flash.set(world.flash.subarray(source, source + copyWidth), target);
+  }
+  const width = cols;
+  const height = rows * ROW;
+  world.entities = world.entities.filter((entity) => {
+    entity.x += shiftX;
+    entity.y += shiftY * ROW;
+    if (boundary === 'torus') {
+      entity.x = ((entity.x % width) + width) % width;
+      entity.y = ((entity.y % height) + height) % height;
+      return true;
+    }
+    return entity.x >= 0 && entity.x < width && entity.y >= 0 && entity.y < height;
+  });
+  world.cols = cols;
+  world.rows = rows;
+  world.w = width;
+  world.h = height;
+  world.trailOffsetX = trailShiftX - gridX;
+  world.trailOffsetY = trailShiftY - gridY;
+  world.trails = trails;
+  world.flash = flash;
   return world;
 }
 
