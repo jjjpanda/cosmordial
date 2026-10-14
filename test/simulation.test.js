@@ -424,6 +424,43 @@ test('separation keeps every cell in an overfull torus after zooming in', () => 
   assert.equal(world.entities.length, 900);
 });
 
+test('an overfull torus can switch to box and continue ticking without losing cells', () => {
+  withSeed(1, () => {
+    const world = createWorld('soup', 24, 22, 0, 'torus');
+    resizeWorld(world, 120, 260, 'torus');
+    world.entities = Array.from({ length: 900 }, (_, i) =>
+      cell(2 + (i % 30) * 1.2, 2 + Math.floor(i / 30) * 1.2, 0, 0, [0, 0, 0, 0, 0, 0, 0], 10));
+    resizeWorld(world, 12, 26, 'torus');
+    for (const boundary of ['torus', 'box', 'box']) {
+      tick(world, { G: 0, boundary });
+      assert.equal(world.entities.filter((e) => e.g).length, 900);
+      assert.ok(world.entities.every((e) => Number.isFinite(e.x) && e.x >= 0 && e.x < world.w && e.y >= 0 && e.y < world.h));
+    }
+    assert.equal(world.tick, 3);
+  });
+});
+
+test('an impossible box packing below the area bound reaches its pass limit safely', () => {
+  const world = { w: 1, h: 1 };
+  const entities = Array.from({ length: 3 }, () => ({ x: 0.5, y: 0.5, g: [0] }));
+  assert.doesNotThrow(() => separateEntities(entities, world, false));
+  assert.equal(entities.length, 3);
+  assert.ok(entities.every((e) => Number.isFinite(e.x) && Number.isFinite(e.y)));
+});
+
+test('separation scratch buffers handle population and world-size changes', () => {
+  const world = { w: 80, h: 60, tick: 0 };
+  for (const count of [2, 140, 3, 70, 1, 20]) {
+    world.w = count === 3 ? 20 : 80;
+    world.entities = Array.from({ length: count }, (_, i) => ({ x: 2 + (i % 8) * 2, y: 2 + Math.floor(i / 8) * 2, g: [0] }));
+    world.entities[0].x = world.entities[1]?.x ?? 2;
+    for (const wrap of [false, true]) {
+      separateEntities(world.entities, world, wrap);
+      assertSeparated(world, wrap);
+    }
+  }
+});
+
 test('trail length controls decay with fixed trail brightness', () => {
   const empty = () => ({ cols: 3, rows: 3, w: 3, h: 6, preset: 'soup', tick: 0, entities: [], trails: Float32Array.from({ length: 9 }, () => 1), flash: new Float32Array(9), events: eventCounts() });
   const off = empty();

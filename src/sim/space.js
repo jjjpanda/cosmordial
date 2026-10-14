@@ -10,6 +10,28 @@ export const physicalRadius = (e) => e.g ? P.CORE / 2 : e.mass >= P.STAR ? ROW /
 const SEPARATION_EPS = 1e-6;
 const SEPARATION_OVERSHOOT = 1.5;
 const MAX_SEPARATION_PASSES = 1024;
+// Scratch buffers belong to a world, not to its entities. Reuse their capacity
+// across ticks and let them be collected when the world is discarded.
+const separationBuffers = new WeakMap();
+function separationScratch(world, entityCount, binCount) {
+  let scratch = separationBuffers.get(world);
+  const capacity = 2 ** Math.ceil(Math.log2(Math.max(16, entityCount)));
+  const binCapacity = 2 ** Math.ceil(Math.log2(Math.max(16, binCount)));
+  if (!scratch || scratch.capacity < entityCount || scratch.binCapacity < binCount ||
+      scratch.capacity > capacity * 4 || scratch.binCapacity > binCapacity * 4) {
+    scratch = {
+      capacity, binCapacity,
+      radii: new Float64Array(capacity),
+      heads: new Int32Array(binCapacity), activeHeads: new Int32Array(binCapacity),
+      next: new Int32Array(capacity), activeNext: new Int32Array(capacity),
+      binKeys: new Int32Array(capacity), movedThisPass: new Uint8Array(capacity),
+      activeA: new Uint8Array(capacity), activeB: new Uint8Array(capacity),
+      heap: new Int32Array(9),
+    };
+    separationBuffers.set(world, scratch);
+  }
+  return scratch;
+}
 export function delta(a, b, w, wrap) {
   let dx = b.x - a.x;
   let dy = b.y - a.y;
@@ -49,21 +71,27 @@ function constrainPosition(e, w, wrap) {
 }
 
 export function separateEntities(entities, w, wrap) {
-  if (entities.length < 2) return;
-  const radii = new Float64Array(entities.length);
+  if (entities.length < 2) {
+    separationBuffers.delete(w);
+    return;
+  }
   let maxRadius = 0;
   let occupiedArea = 0;
   for (let i = 0; i < entities.length; i++) {
     const radius = physicalRadius(entities[i]);
-    radii[i] = radius;
     if (radius > maxRadius) maxRadius = radius;
     occupiedArea += Math.PI * radius * radius;
   }
   const contactRange = 2 * maxRadius;
   if (!contactRange) return;
-  // A wrapped world cannot separate disks whose combined area exceeds its
-  // surface. Keep every entity and retry on later ticks if density falls.
-  if (wrap && occupiedArea > w.w * w.h) return;
+  // Box centers may sit at an edge, so include the area outside the boundary
+  // that their disks can occupy. In either boundary an impossible packing
+  // must preserve entities and allow future ticks to reduce the density.
+  const availableArea = wrap ? w.w * w.h : (w.w + 2 * maxRadius) * (w.h + 2 * maxRadius);
+  if (occupiedArea > availableArea) {
+    separationBuffers.delete(w);
+    return;
+  }
   const columns = Math.max(1, Math.floor(w.w / contactRange));
   const rows = Math.max(1, Math.floor(w.h / contactRange));
   const cellWidth = w.w / columns;
@@ -75,22 +103,17 @@ export function separateEntities(entities, w, wrap) {
     const y = wrap ? ((e.y % w.h) + w.h) % w.h : Math.max(0, Math.min(w.h, e.y));
     return Math.min(rows - 1, Math.floor(y / cellHeight)) * columns + Math.min(columns - 1, Math.floor(x / cellWidth));
   };
-  const heads = new Int32Array(binCount);
-  const activeHeads = new Int32Array(binCount);
-  const next = new Int32Array(entities.length);
-  const activeNext = new Int32Array(entities.length);
-  const binKeys = new Int32Array(entities.length);
-  const movedThisPass = new Uint8Array(entities.length);
-  const heap = new Int32Array(9);
+  const { radii, heads, activeHeads, next, activeNext, binKeys, movedThisPass, heap, activeA, activeB } = separationScratch(w, entities.length, binCount);
+  for (let i = 0; i < entities.length; i++) radii[i] = physicalRadius(entities[i]);
   // Only moved entities can create new contacts. A full pass after the active
   // set clears catches contacts missed while bins were changing within a pass.
   let active = null;
-  let nextActive = new Uint8Array(entities.length);
+  let nextActive = activeA;
   for (let pass = 0; pass < MAX_SEPARATION_PASSES; pass++) {
-    nextActive.fill(0);
-    movedThisPass.fill(0);
-    heads.fill(-1);
-    if (active) activeHeads.fill(-1);
+    nextActive.fill(0, 0, entities.length);
+    movedThisPass.fill(0, 0, entities.length);
+    heads.fill(-1, 0, binCount);
+    if (active) activeHeads.fill(-1, 0, binCount);
     for (let i = entities.length - 1; i >= 0; i--) {
       const key = binOf(entities[i]);
       binKeys[i] = key;
@@ -143,7 +166,14 @@ export function separateEntities(entities, w, wrap) {
         if (active && !active[i] && !active[j]) continue;
         const b = entities[j];
         const limit = radii[i] + radii[j];
-        const [dx, dy] = delta(a, b, w, wrap);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        if (wrap) {
+          if (dx > w.w / 2) dx -= w.w;
+          else if (dx < -w.w / 2) dx += w.w;
+          if (dy > w.h / 2) dy -= w.h;
+          else if (dy < -w.h / 2) dy += w.h;
+        }
         if (Math.abs(dx) >= limit || Math.abs(dy) >= limit) continue;
         const distance = Math.hypot(dx, dy);
         if (distance >= limit - SEPARATION_EPS) continue;
@@ -174,11 +204,10 @@ export function separateEntities(entities, w, wrap) {
     }
     const previousActive = active;
     active = nextActive;
-    nextActive = previousActive ?? new Uint8Array(entities.length);
+    nextActive = previousActive ?? (active === activeA ? activeB : activeA);
   }
-  // A finite pass limit also covers torus arrangements that cannot be
-  // separated despite their combined disk area fitting inside the world.
-  if (!wrap) throw new RangeError('World is too crowded to separate entities');
+  // Packing can also fail below the area bound. Leave any remaining overlaps
+  // for the next tick rather than breaking playback after the pass limit.
 }
 
 export function flash(w, s, r) {

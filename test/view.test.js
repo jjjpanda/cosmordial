@@ -365,11 +365,15 @@ test('20% fullscreen zoom renders densely without creating a cell element per gr
     component.zoom = 1;
     component.renderStatus = () => {};
     component.syncFieldTools = () => {};
+    component.renderField();
+    assert.equal(component.fieldCells.length, 8);
     component.setZoom(0.2);
     assert.deepEqual([component.world.cols, component.world.rows], [20, 10]);
     assert.deepEqual([component.compactCanvas.width, component.compactCanvas.height], [100, 60]);
     assert.equal(component.view.style.display, 'none');
     assert.equal(component.view.cells.length, 0);
+    assert.equal(component.fieldCells, null);
+    assert.equal(component.lastGlow, null);
     assert.equal(draws.filter((args) => args.length === 4).length, 1);
     assert.ok(draws.length >= 2);
     assert.equal(fills, 1);
@@ -381,6 +385,9 @@ test('20% fullscreen zoom renders densely without creating a cell element per gr
     component.setZoom(0.4);
     assert.equal(component.view.style.display, '');
     assert.equal(component.compactCanvas.style.display, 'none');
+    assert.equal(component.compactCanvas.width, 0);
+    assert.equal(component.compactCanvas.height, 0);
+    assert.equal(component.fieldCells.length, component.world.cols * component.world.rows);
   } finally {
     globalThis.document = previousDocument;
     globalThis.getComputedStyle = previousStyle;
@@ -506,6 +513,23 @@ test('field returns independent snapshots and clears marks when entities move aw
   assert.notEqual(second.glow, first.glow);
   assert.equal(first.glyphs[0], GLYPHS[ROLE.FOOD]);
   assert.equal(component.view.cells[0].textContent, '·');
+});
+
+test('population histories stay bounded beyond 20000 ticks', () => {
+  const component = Object.create(Cosmordial.prototype);
+  component.history = [];
+  component.speciesHistory = [];
+  component.opts = { speed: 25 };
+  component.raf = 1;
+  component.updateSparkline = () => {};
+  for (let tick = 1; tick <= 25000; tick++) {
+    component.recordPopulation({ tick, pop: tick, counts: { [GLYPHS[ROLE.CELL]]: tick } });
+    assert.ok(component.history.length <= 721);
+    assert.ok(component.speciesHistory.length <= 721);
+  }
+  assert.equal(component.history[0], 25000 - 720);
+  assert.equal(component.history.at(-1), 25000);
+  assert.deepEqual(component.speciesHistory.at(-1), [25000, 0, 0, 0, 0]);
 });
 
 test('draw updates the field, status, and population history', () => {

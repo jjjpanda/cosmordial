@@ -534,12 +534,21 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
 
   renderField() {
     if (this.isCompactZoom()) {
+      if (this.fieldCells?.length) {
+        this.view.innerHTML = '';
+        this.fieldCells = this.fieldClasses = this.fieldMarks = this.lastGlow = null;
+        this.fieldCols = this.fieldRows = 0;
+      }
       this.view.style.display = 'none';
       this.compactCanvas.style.display = 'block';
       return this.renderCompactField();
     }
     this.view.style.display = '';
-    if (this.compactCanvas) this.compactCanvas.style.display = 'none';
+    if (this.compactCanvas) {
+      this.compactCanvas.style.display = 'none';
+      // Release the hidden canvas backing store when glyph rendering resumes.
+      if (this.compactCanvas.width) this.compactCanvas.width = this.compactCanvas.height = 0;
+    }
     const { cols, rows, entities, trails, flash } = this.world;
     const ch = Array(cols * rows).fill('·');
     const wrap = this.opts?.boundary === 'torus';

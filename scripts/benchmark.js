@@ -3,7 +3,7 @@ import { createWorld, resizeWorld, PRESETS, tick } from '../src/sim.js';
 import { roleOf } from '../src/sim/entities.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
-  const match = /^--(ticks|seeds|presets|cols|rows|base-cols|base-rows|boundary|window)=(.+)$/.exec(arg);
+  const match = /^--(ticks|seeds|presets|cols|rows|base-cols|base-rows|boundary|window|sample)=(.+)$/.exec(arg);
   if (!match) throw new Error(`Unknown argument: ${arg}`);
   return [match[1], match[2]];
 }));
@@ -16,6 +16,8 @@ const baseCols = args['base-cols'] === undefined ? cols : Number(args['base-cols
 const baseRows = args['base-rows'] === undefined ? rows : Number(args['base-rows']);
 const boundary = args.boundary ?? 'box';
 const windowTicks = args.window === undefined ? Math.min(1000, ticks) : Number(args.window);
+const sampleTicks = args.sample === undefined ? 0 : Number(args.sample);
+if (!Number.isSafeInteger(sampleTicks) || sampleTicks < 0) throw new Error('--sample must be a nonnegative integer (0 disables memory checkpoints)');
 if ([ticks, seeds, cols, rows, baseCols, baseRows, windowTicks].some((n) => !Number.isSafeInteger(n) || n < 1) || windowTicks > ticks || presets.some((preset) => !PRESETS.includes(preset)) || !['box', 'torus'].includes(boundary)) {
   throw new Error('Use positive integer --ticks, --seeds, --cols, --rows, --base-cols, --base-rows, and --window (at most ticks); presets from orbit,binary,soup; and --boundary=box|torus');
 }
@@ -69,6 +71,14 @@ try {
         maxPop = Math.max(maxPop, total);
         if (i === windowTicks) firstWindowMs = performance.now() - start;
         if (i % 100 === 0 || i === ticks) peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+        if (sampleTicks && (i % sampleTicks === 0 || i === ticks)) {
+          global.gc?.();
+          const memory = process.memoryUsage();
+          const mb = (bytes) => +(bytes / 1048576).toFixed(1);
+          console.log(JSON.stringify({ preset, seed, tick: i, entities: world.entities.length, pop: total,
+            elapsedMs: Math.round(performance.now() - start), forcedGC: !!global.gc,
+            heapMB: mb(memory.heapUsed), heapTotalMB: mb(memory.heapTotal), arrayBuffersMB: mb(memory.arrayBuffers), rssMB: mb(memory.rss) }));
+        }
       }
       const lastWindowMs = performance.now() - lastWindowStart;
       global.gc?.();
