@@ -237,11 +237,13 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     this.syncFieldTools();
     if (globalThis.ResizeObserver) {
       this.resizeObserver ??= new ResizeObserver(() => {
-        if (this.clientWidth === this.lastWidth) return;
+        if (this.clientWidth === this.lastWidth && this.clientHeight === this.lastHeight) return;
         this.lastWidth = this.clientWidth;
+        this.lastHeight = this.clientHeight;
         this.scheduleResize();
       });
       this.lastWidth = this.clientWidth;
+      this.lastHeight = this.clientHeight;
       this.resizeObserver.observe(this);
     }
     this.onWindowResize ??= () => this.scheduleResize();

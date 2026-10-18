@@ -168,6 +168,48 @@ test('embedded fields fit short and narrow iframe viewports without dropping row
   }
 });
 
+test('embedded fields reflow after height-only container resizes', (t) => {
+  const previousObserver = globalThis.ResizeObserver;
+  const previousStyle = globalThis.getComputedStyle;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let onResize;
+  globalThis.ResizeObserver = class {
+    constructor(callback) { onResize = callback; }
+    observe() {}
+  };
+  globalThis.getComputedStyle = () => ({});
+  try {
+    const component = Object.create(Cosmordial.prototype);
+    const attributes = { embed: '', theme: 'ansi', autoplay: 'false', cols: '80', rows: '30' };
+    Object.assign(component, {
+      hasAttribute: name => name in attributes,
+      getAttribute: name => attributes[name] ?? null,
+      fieldFrame: { addEventListener() {} },
+      fieldScroller: { style: {}, clientWidth: 798, clientHeight: 448 },
+      view: fakeField(),
+      world: { cols: 80, rows: 30 },
+      fieldMobile: false,
+      clientWidth: 800, clientHeight: 450, isConnected: true,
+      measureField: () => ({ fontSize: 16, cellWidth: 9.6 }),
+      syncFieldTools() {}, sync() {},
+      reset() { assert.fail('a height change must preserve the world'); },
+    });
+    component.connectedCallback();
+    component.updateFieldLayout();
+    assert.equal(component.view.style.height, '448px');
+    for (const height of [100, 450]) {
+      component.clientHeight = height;
+      component.fieldScroller.clientHeight = height - 2;
+      onResize();
+      t.mock.timers.tick(150);
+      assert.equal(component.view.style.height, `${height - 2}px`);
+    }
+  } finally {
+    globalThis.ResizeObserver = previousObserver;
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
 test('requested and automatic fields fit a constrained container', () => {
   const previousStyle = globalThis.getComputedStyle;
   globalThis.getComputedStyle = () => ({
