@@ -25,12 +25,11 @@ Cells spend energy to move and reproduce. Mutations change their traits and role
 
 ### Hosted iframe
 
-Use the field-only `/embed/` page to keep the simulation out of your site's
-JavaScript bundle. The iframe downloads Cosmordial separately when it loads.
+Embed the simulation field with an iframe:
 
 ```html
 <iframe
-  src="https://jjjpanda.github.io/cosmordial/embed/?preset=binary&amp;theme=amber&amp;speed=12&amp;autoplay=true"
+  src="https://jjjpanda.github.io/cosmordial/embed/?preset=binary&amp;theme=amber&amp;speed=12"
   title="Cosmordial simulation"
   width="800"
   height="450"
@@ -39,34 +38,15 @@ JavaScript bundle. The iframe downloads Cosmordial separately when it loads.
 ></iframe>
 ```
 
-`/embed` redirects to `/embed/` on GitHub Pages and the development server. If
-hosting under a project path, keep that prefix (for example,
-`/cosmordial/embed/`). The field fits the iframe's width and height without
-clipping or scrollbars. Navigation, settings, legends, statistics, and field
-buttons are hidden. Keyboard controls remain available when the field has focus;
-the iframe does not take focus automatically.
+The field fills the iframe with its panels hidden. Set the iframe's dimensions
+in the parent page; omit URL `width` and `height` to fill it.
 
-Query parameters configure the component before the simulation starts:
+Query parameters use the [Options](#options) names and defaults; `embed` is always
+enabled. Set `autoplay=false` to start paused. `transparent` and `autofocus` accept
+`true` or a bare parameter to enable, and `false` or omission to disable.
 
-| Parameter | Accepted values |
-| --- | --- |
-| `preset` | `orbit`, `binary`, `soup` |
-| `theme` | `ansi`, `green`, `amber`, `colorblind` |
-| `boundary` | `box`, `torus` |
-| `width`, `height` | Integer field size: 80–4096 / 80–2160 pixels, capped by the iframe. Omit to fill the iframe. |
-| `cols`, `rows` | Integer grid size: 1–400 columns / 1–200 rows. |
-| `speed` | 1–60 ticks per second |
-| `gravity`, `mutation` | 0–0.5 |
-| `trail-length` | Integer from 0–20 |
-| `autoplay` | `true` or `false` |
-| `transparent`, `autofocus` | `true` or a bare parameter enables; `false` disables. |
-
-Omitted or invalid parameters use the component defaults listed below. Unknown
-parameters are ignored, including `embed`: this page always uses embed mode.
-When a parameter is repeated, its first value is used. `transparent=true` clears
-both the iframe page and component backgrounds. Match your surrounding colors to
-the selected theme. Change the iframe's `src` to apply new settings; doing so
-reloads the simulation.
+Unknown or invalid values are ignored; the first repeated value wins. Changing
+the iframe's `src` reloads the simulation with the new settings.
 
 ### Web component
 
@@ -82,22 +62,20 @@ import 'cosmordial';
 <cosmordial-universe width="800" height="450" preset="binary" theme="amber"></cosmordial-universe>
 ```
 
-The whole field must fit the available space. Requested dimensions shrink to fit the container; no overflow, scrolling, or clipped rows or columns are allowed.
-
 ## Options
 
 Set options with HTML attributes or `setAttribute()`.
 
 | Attribute | Default | Purpose |
 | --- | --- | --- |
-| `width`, `height` | automatic | Requested field size in pixels, limited by available space. |
-| `cols`, `rows` | 80 × 30; adapts on mobile | Simulation grid size. Changing either resets the world. |
+| `width`, `height` | automatic | Field size in pixels, limited by available space. URL: integers 80–4096 / 80–2160. |
+| `cols`, `rows` | 80 × 30; adapts on mobile | Grid size; changing either resets the world. URL: integers 1–400 / 1–200. |
 | `preset` | `orbit` | `orbit`, `binary`, or `soup`. Changing it resets the world. |
 | `theme` | `ansi` | `ansi`, `green`, `amber`, or `colorblind`. |
-| `speed` | `25` | Ticks per second. |
-| `gravity` | `0.1` | Gravity strength. |
-| `mutation` | `0.25` | Mutation rate. |
-| `trail-length` | `6` | Trail duration; `0` disables trails. |
+| `speed` | `25` | Ticks per second. URL: 1–60. |
+| `gravity` | `0.1` | Gravity strength. URL: 0–0.5. |
+| `mutation` | `0.25` | Mutation rate. URL: 0–0.5. |
+| `trail-length` | `6` | Trail duration; `0` disables trails. URL: integers 0–20. |
 | `boundary` | `box` | `box` or `torus` (wraparound). |
 | `autoplay` | on | Set to `false` to start paused. |
 | `transparent`, `autofocus` | absent | Add to enable a transparent background or initial focus. |
