@@ -1,10 +1,10 @@
 import * as esbuild from 'esbuild';
 
 const opts = {
-  entryPoints: ['src/index.js'],
+  entryPoints: { cosmordial: 'src/index.js', embed: 'src/embed.js' },
   bundle: true,
   format: 'esm',
-  outfile: 'dist/cosmordial.js',
+  outdir: 'dist',
   loader: { '.css': 'text' },
 };
 

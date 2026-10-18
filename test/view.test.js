@@ -133,6 +133,83 @@ test('a pixel-sized field fits inside the scroller borders', () => {
   }
 });
 
+test('embedded fields fit short and narrow iframe viewports without dropping rows', () => {
+  const previousStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({});
+  try {
+    const component = Object.create(Cosmordial.prototype);
+    const attributes = { embed: '', cols: '80', rows: '30' };
+    component.getAttribute = (name) => attributes[name] ?? null;
+    component.hasAttribute = (name) => name in attributes;
+    component.world = { cols: 80, rows: 30 };
+    component.fieldFrame = {};
+    component.fieldScroller = { style: {}, clientWidth: 318, clientHeight: 98 };
+    component.view = { style: { setProperty() {} } };
+    component.measureField = () => ({ fontSize: 16, cellWidth: 9.6 });
+    component.updateFieldSize();
+    assert.equal(component.fieldScroller.style.width, '100%');
+    assert.equal(component.fieldScroller.style.height, '100%');
+    for (const [width, height] of [[318, 98], [98, 318], [798, 448]]) {
+      component.fieldScroller.clientWidth = width;
+      component.fieldScroller.clientHeight = height;
+      component.updateFieldLayout();
+      const fontSize = parseFloat(component.view.style.fontSize);
+      assert.equal(component.view.style.width, `${width}px`);
+      assert.equal(component.view.style.height, `${height}px`);
+      assert.ok(80 * 9.6 * fontSize / 16 <= width + 1e-9);
+      assert.ok(30 * fontSize * 1.15 <= height + 1e-9);
+    }
+    component.world = {};
+    component.updateFieldLayout = () => {};
+    component.attributeChangedCallback('embed');
+    assert.ok(Cosmordial.observedAttributes.includes('embed'));
+  } finally {
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
+test('embedded fields reflow after height-only container resizes', (t) => {
+  const previousObserver = globalThis.ResizeObserver;
+  const previousStyle = globalThis.getComputedStyle;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let onResize;
+  globalThis.ResizeObserver = class {
+    constructor(callback) { onResize = callback; }
+    observe() {}
+  };
+  globalThis.getComputedStyle = () => ({});
+  try {
+    const component = Object.create(Cosmordial.prototype);
+    const attributes = { embed: '', theme: 'ansi', autoplay: 'false', cols: '80', rows: '30' };
+    Object.assign(component, {
+      hasAttribute: name => name in attributes,
+      getAttribute: name => attributes[name] ?? null,
+      fieldFrame: { addEventListener() {} },
+      fieldScroller: { style: {}, clientWidth: 798, clientHeight: 448 },
+      view: fakeField(),
+      world: { cols: 80, rows: 30 },
+      fieldMobile: false,
+      clientWidth: 800, clientHeight: 450, isConnected: true,
+      measureField: () => ({ fontSize: 16, cellWidth: 9.6 }),
+      syncFieldTools() {}, sync() {},
+      reset() { assert.fail('a height change must preserve the world'); },
+    });
+    component.connectedCallback();
+    component.updateFieldLayout();
+    assert.equal(component.view.style.height, '448px');
+    for (const height of [100, 450]) {
+      component.clientHeight = height;
+      component.fieldScroller.clientHeight = height - 2;
+      onResize();
+      t.mock.timers.tick(150);
+      assert.equal(component.view.style.height, `${height - 2}px`);
+    }
+  } finally {
+    globalThis.ResizeObserver = previousObserver;
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
 test('requested and automatic fields fit a constrained container', () => {
   const previousStyle = globalThis.getComputedStyle;
   globalThis.getComputedStyle = () => ({

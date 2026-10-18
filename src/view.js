@@ -96,7 +96,7 @@ const pixelSize = (el, name) => {
 };
 
 export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
-  static observedAttributes = ['width', 'height', 'cols', 'rows', 'preset', 'theme', 'speed', 'gravity', 'mutation', 'boundary', 'autoplay', 'trail-length'];
+  static observedAttributes = ['width', 'height', 'cols', 'rows', 'preset', 'theme', 'speed', 'gravity', 'mutation', 'boundary', 'autoplay', 'trail-length', 'embed'];
 
   constructor() {
     super();
@@ -237,11 +237,13 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     this.syncFieldTools();
     if (globalThis.ResizeObserver) {
       this.resizeObserver ??= new ResizeObserver(() => {
-        if (this.clientWidth === this.lastWidth) return;
+        if (this.clientWidth === this.lastWidth && this.clientHeight === this.lastHeight) return;
         this.lastWidth = this.clientWidth;
+        this.lastHeight = this.clientHeight;
         this.scheduleResize();
       });
       this.lastWidth = this.clientWidth;
+      this.lastHeight = this.clientHeight;
       this.resizeObserver.observe(this);
     }
     this.onWindowResize ??= () => this.scheduleResize();
@@ -264,7 +266,7 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
   attributeChangedCallback(name) {
     if (!this.world) return;
     if (['cols', 'rows', 'preset'].includes(name)) this.reset();
-    else if (name === 'width' || name === 'height') {
+    else if (name === 'width' || name === 'height' || name === 'embed') {
       this.updateFieldSize();
       this.updateFieldLayout();
     }
@@ -287,10 +289,11 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
 
   updateFieldSize() {
     const fullscreen = this.isFieldFullscreen();
+    const embedded = this.hasAttribute('embed');
     const width = pixelSize(this, 'width');
     const height = pixelSize(this, 'height');
-    this.fieldScroller.style.width = fullscreen ? '100%' : width ? `${width}px` : '';
-    this.fieldScroller.style.height = fullscreen ? '100%' : height ? `${height}px` : '';
+    this.fieldScroller.style.width = fullscreen ? '100%' : width ? `${width}px` : embedded ? '100%' : '';
+    this.fieldScroller.style.height = fullscreen ? '100%' : height ? `${height}px` : embedded ? '100%' : '';
   }
 
   measureField() {
@@ -315,9 +318,10 @@ export class Cosmordial extends (globalThis.HTMLElement ?? class {}) {
     const naturalWidth = cols * cellWidth;
     const naturalHeight = rows * fontSize * 1.15;
     const fullscreen = this.isFieldFullscreen();
-    let width = fullscreen ? this.fieldScroller.clientWidth : pixelSize(this, 'width');
-    let height = fullscreen ? this.fieldScroller.clientHeight : pixelSize(this, 'height');
-    if (!fullscreen && (width || height)) {
+    const embedded = this.hasAttribute('embed');
+    let width = fullscreen || embedded ? this.fieldScroller.clientWidth : pixelSize(this, 'width');
+    let height = fullscreen || embedded ? this.fieldScroller.clientHeight : pixelSize(this, 'height');
+    if (!fullscreen && !embedded && (width || height)) {
       const border = getComputedStyle(this.fieldScroller);
       if (width) width -= (parseFloat(border.borderLeftWidth) || 0) + (parseFloat(border.borderRightWidth) || 0);
       if (height) height -= (parseFloat(border.borderTopWidth) || 0) + (parseFloat(border.borderBottomWidth) || 0);
