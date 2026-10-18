@@ -133,6 +133,41 @@ test('a pixel-sized field fits inside the scroller borders', () => {
   }
 });
 
+test('embedded fields fit short and narrow iframe viewports without dropping rows', () => {
+  const previousStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({});
+  try {
+    const component = Object.create(Cosmordial.prototype);
+    const attributes = { embed: '', cols: '80', rows: '30' };
+    component.getAttribute = (name) => attributes[name] ?? null;
+    component.hasAttribute = (name) => name in attributes;
+    component.world = { cols: 80, rows: 30 };
+    component.fieldFrame = {};
+    component.fieldScroller = { style: {}, clientWidth: 318, clientHeight: 98 };
+    component.view = { style: { setProperty() {} } };
+    component.measureField = () => ({ fontSize: 16, cellWidth: 9.6 });
+    component.updateFieldSize();
+    assert.equal(component.fieldScroller.style.width, '100%');
+    assert.equal(component.fieldScroller.style.height, '100%');
+    for (const [width, height] of [[318, 98], [98, 318], [798, 448]]) {
+      component.fieldScroller.clientWidth = width;
+      component.fieldScroller.clientHeight = height;
+      component.updateFieldLayout();
+      const fontSize = parseFloat(component.view.style.fontSize);
+      assert.equal(component.view.style.width, `${width}px`);
+      assert.equal(component.view.style.height, `${height}px`);
+      assert.ok(80 * 9.6 * fontSize / 16 <= width + 1e-9);
+      assert.ok(30 * fontSize * 1.15 <= height + 1e-9);
+    }
+    component.world = {};
+    component.updateFieldLayout = () => {};
+    component.attributeChangedCallback('embed');
+    assert.ok(Cosmordial.observedAttributes.includes('embed'));
+  } finally {
+    globalThis.getComputedStyle = previousStyle;
+  }
+});
+
 test('requested and automatic fields fit a constrained container', () => {
   const previousStyle = globalThis.getComputedStyle;
   globalThis.getComputedStyle = () => ({

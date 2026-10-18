@@ -23,6 +23,53 @@ Cells spend energy to move and reproduce. Mutations change their traits and role
 
 ## Embed
 
+### Hosted iframe
+
+Use the field-only `/embed/` page to keep the simulation out of your site's
+JavaScript bundle. The iframe downloads Cosmordial separately when it loads.
+
+```html
+<iframe
+  src="https://jjjpanda.github.io/cosmordial/embed/?preset=binary&amp;theme=amber&amp;speed=12&amp;autoplay=true"
+  title="Cosmordial simulation"
+  width="800"
+  height="450"
+  loading="lazy"
+  style="border: 0"
+></iframe>
+```
+
+`/embed` redirects to `/embed/` on GitHub Pages and the development server. If
+hosting under a project path, keep that prefix (for example,
+`/cosmordial/embed/`). The field fits the iframe's width and height without
+clipping or scrollbars. Navigation, settings, legends, statistics, and field
+buttons are hidden. Keyboard controls remain available when the field has focus;
+the iframe does not take focus automatically.
+
+Query parameters configure the component before the simulation starts:
+
+| Parameter | Accepted values |
+| --- | --- |
+| `preset` | `orbit`, `binary`, `soup` |
+| `theme` | `ansi`, `green`, `amber`, `colorblind` |
+| `boundary` | `box`, `torus` |
+| `width`, `height` | Integer field size: 80–4096 / 80–2160 pixels, capped by the iframe. Omit to fill the iframe. |
+| `cols`, `rows` | Integer grid size: 1–400 columns / 1–200 rows. |
+| `speed` | 1–60 ticks per second |
+| `gravity`, `mutation` | 0–0.5 |
+| `trail-length` | Integer from 0–20 |
+| `autoplay` | `true` or `false` |
+| `transparent`, `autofocus` | `true` or a bare parameter enables; `false` disables. |
+
+Omitted or invalid parameters use the component defaults listed below. Unknown
+parameters are ignored, including `embed`: this page always uses embed mode.
+When a parameter is repeated, its first value is used. `transparent=true` clears
+both the iframe page and component backgrounds. Match your surrounding colors to
+the selected theme. Change the iframe's `src` to apply new settings; doing so
+reloads the simulation.
+
+### Web component
+
 ```sh
 npm install ../cosmordial
 ```
@@ -54,6 +101,7 @@ Set options with HTML attributes or `setAttribute()`.
 | `boundary` | `box` | `box` or `torus` (wraparound). |
 | `autoplay` | on | Set to `false` to start paused. |
 | `transparent`, `autofocus` | absent | Add to enable a transparent background or initial focus. |
+| `embed` | absent | Add to hide all interface panels and fit the field to the component's height. Give its container a definite height. |
 
 ## Controls
 
